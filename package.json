@@ -9,7 +9,10 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "postinstall": "node scripts/copy-pdf-worker.mjs",
+    "predev": "node scripts/copy-pdf-worker.mjs",
+    "prebuild": "node scripts/copy-pdf-worker.mjs"
   },
   "keywords": [],
   "author": "",
@@ -33,12 +36,19 @@
     "@univerjs/presets": "1.2.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
+    "docx": "9.14.0",
     "eslint": "9.39.5",
     "eslint-config-next": "16.4.3",
+    "exceljs": "4.4.0",
+    "jszip": "3.10.2",
     "lucide-react": "1.61.0",
     "next": "16.4.3",
     "papaparse": "5.7.0",
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "6.4.299",
+    "pdfmake": "0.2.20",
     "pptxgenjs": "4.0.1",
+    "qrcode": "1.5.4",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "tailwind-merge": "3.7.0",
@@ -48,9 +58,20 @@
   },
   "private": true,
   "devDependencies": {
-    "@playwright/test": "1.64.1"
+    "@playwright/test": "1.64.1",
+    "@types/pdfmake": "0.2.12",
+    "@types/qrcode": "1.5.6",
+    "jsqr": "1.4.0"
   },
   "engines": {
     "node": ">=22"
+  },
+  "overrides": {
+    "pptxgenjs": {
+      "image-size": "2.0.4"
+    },
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
   }
 }
