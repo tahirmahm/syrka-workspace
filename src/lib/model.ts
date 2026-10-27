@@ -5,10 +5,10 @@ export type OfficeFile={id:string;owner_id:string;name:string;kind:FileKind;cont
 // Presentation names are separate from persisted kind IDs for backwards compatibility.
 export const suiteName = 'Syrka Workspace';
 export const products = {
-  write: { name: 'Write', fullName: 'Syrka Write', label: 'Document', color: '#252525', description: 'Give your ideas a voice.' },
-  tables: { name: 'Tables', fullName: 'Syrka Tables', label: 'Spreadsheet', color: '#555555', description: 'Make sense of every number.' },
-  present: { name: 'Present', fullName: 'Syrka Present', label: 'Presentation', color: '#808080', description: 'Bring your story to life.' },
-  create: { name: 'Create', fullName: 'Syrka Create', label: 'Creative and design tools', color: '#404040', description: 'Make space for your imagination.' },
+  write: { name: 'Write', fullName: 'Syrka Write', label: 'Document', color: '#4775cc', description: 'Give your ideas a voice.' },
+  tables: { name: 'Tables', fullName: 'Syrka Tables', label: 'Spreadsheet', color: '#36816a', description: 'Make sense of every number.' },
+  present: { name: 'Present', fullName: 'Syrka Present', label: 'Presentation', color: '#cf764c', description: 'Bring your story to life.' },
+  create: { name: 'Create', fullName: 'Syrka Create', label: 'Creative and design tools', color: '#8b68ac', description: 'Make space for your imagination.' },
 } as const;
 // Create has no editor in this MVP. Only implemented editors are launchable.
 export const apps = { doc: products.write, sheet: products.tables, slides: products.present };
