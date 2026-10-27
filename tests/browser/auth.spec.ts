@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 test("registration validates fields, submits to Workspace Auth and displays SMTP failures", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/workspace");
   await page
     .getByRole("button", {
       name: "New to Syrka? Create an account",
@@ -26,7 +26,7 @@ test("registration validates fields, submits to Workspace Auth and displays SMTP
       "zguejzlseldovdssiumn.supabase.co",
     );
     expect(new URL(request.url()).searchParams.get("redirect_to")).toBe(
-      "http://127.0.0.1:3000/auth/callback",
+      "http://127.0.0.1:3000/workspace/auth/callback",
     );
     expect(request.postDataJSON().email).toBe("student@example.net");
     submitted = true;

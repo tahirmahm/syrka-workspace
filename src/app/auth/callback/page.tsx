@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase, cloudConfigError } from "@/lib/storage";
 import { authErrorMessage } from "@/lib/cloud-config";
+import {workspacePath} from "@/lib/paths";
 export default function AuthCallback() {
   const [message, setMessage] = useState("Confirming your sign-in…");
   const [failed, setFailed] = useState(false);
@@ -30,7 +31,7 @@ export default function AuthCallback() {
           throw Error(
             "This confirmation link is invalid or has expired. Return to sign-in and try again.",
           );
-        if (active) window.location.replace("/");
+        if (active) window.location.replace(workspacePath());
       } catch (error) {
         if (active) {
           setFailed(true);

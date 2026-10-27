@@ -39,7 +39,7 @@ async function image(page: Page, mime = "image/png") {
 test("public catalogue, search, categories and mobile navigation", async ({
   page,
 }) => {
-  await page.goto("/tools");
+  await page.goto("/workspace/tools");
   await expect(
     page.getByRole("heading", { name: "Tools for everyday work." }),
   ).toBeVisible();
@@ -60,7 +60,7 @@ test("public catalogue, search, categories and mobile navigation", async ({
 test("PDF merge preserves reordered pages; split extracts selected order", async ({
   page,
 }) => {
-  await page.goto("/tools/merge-pdf");
+  await page.goto("/workspace/tools/merge-pdf");
   await page
     .getByLabel("Upload files")
     .setInputFiles([
@@ -74,7 +74,7 @@ test("PDF merge preserves reordered pages; split extracts selected order", async
   await page.getByRole("button", { name: "Merge PDFs", exact: true }).click();
   const merged = await PDFDocument.load(await result(page));
   expect(merged.getPages().map((p) => p.getWidth())).toEqual([203, 101, 102]);
-  await page.goto("/tools/split-pdf");
+  await page.goto("/workspace/tools/split-pdf");
   await page
     .getByLabel("Upload files")
     .setInputFiles(await pdf("pages.pdf", [101, 102, 103]));
@@ -95,7 +95,7 @@ test("PDF merge preserves reordered pages; split extracts selected order", async
 test("images become valid landscape PDFs and PDF pages become PNGs and ZIP", async ({
   page,
 }) => {
-  await page.goto("/tools/images-to-pdf");
+  await page.goto("/workspace/tools/images-to-pdf");
   const png = await image(page);
   await page.getByLabel("Upload files").setInputFiles([
     { name: "one.png", mimeType: "image/png", buffer: png },
@@ -109,7 +109,7 @@ test("images become valid landscape PDFs and PDF pages become PNGs and ZIP", asy
   expect(out.getPages()[0].getWidth()).toBeGreaterThan(
     out.getPages()[0].getHeight(),
   );
-  await page.goto("/tools/pdf-to-images");
+  await page.goto("/workspace/tools/pdf-to-images");
   await page
     .getByLabel("Upload files")
     .setInputFiles(await pdf("pages.pdf", [101, 102]));
@@ -124,7 +124,7 @@ test("images become valid landscape PDFs and PDF pages become PNGs and ZIP", asy
 test("image compression reports real sizes and conversion generates the selected encoding", async ({
   page,
 }) => {
-  await page.goto("/tools/compress-image");
+  await page.goto("/workspace/tools/compress-image");
   const png = await image(page);
   await page
     .getByLabel("Upload files")
@@ -141,7 +141,7 @@ test("image compression reports real sizes and conversion generates the selected
         ? "larger"
         : "Same file size";
   await expect(page.locator(".tool-size-comparison")).toContainText(label);
-  await page.goto("/tools/convert-image");
+  await page.goto("/workspace/tools/convert-image");
   await page
     .getByLabel("Upload files")
     .setInputFiles({ name: "picture.png", mimeType: "image/png", buffer: png });
@@ -165,12 +165,12 @@ test("image compression reports real sizes and conversion generates the selected
 test("word count is instant and QR codes decode to the exact input", async ({
   page,
 }) => {
-  await page.goto("/tools/word-counter");
+  await page.goto("/workspace/tools/word-counter");
   await page.getByLabel("Your text").fill("Hello world!\n\nCafé time.");
   await expect(page.locator(".word-stats > div").first()).toHaveText("4Words");
   await page.getByRole("button", { name: "Clear", exact: true }).click();
   await expect(page.locator(".word-stats > div").first()).toHaveText("0Words");
-  await page.goto("/tools/qr-code-generator");
+  await page.goto("/workspace/tools/qr-code-generator");
   await page
     .getByLabel("Website URL", { exact: true })
     .fill("https://example.com/syrka?student=1");
@@ -215,7 +215,7 @@ test("invalid files never upload and show an actionable error", async ({
   page.on("request", (r) => {
     if (r.method() === "POST") posts.push(r.url());
   });
-  await page.goto("/tools/split-pdf");
+  await page.goto("/workspace/tools/split-pdf");
   await page
     .getByLabel("Upload files")
     .setInputFiles({
@@ -226,7 +226,7 @@ test("invalid files never upload and show an actionable error", async ({
   await expect(page.locator(".tool-error[role=alert]")).toContainText(
     "not a valid PDF",
   );
-  await page.goto("/tools/convert-image");
+  await page.goto("/workspace/tools/convert-image");
   await page
     .getByLabel("Upload files")
     .setInputFiles({
