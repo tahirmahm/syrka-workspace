@@ -62,3 +62,9 @@ No real-time multiplayer, sharing, version history, comments, password reset UI,
 The suite is **Syrka Workspace**. Its product names are **Syrka Write**, **Syrka Tables**, **Syrka Present**, and **Syrka Create** (creative and design tools). Within Workspace, labels use Write, Tables, Present, and Create. Create is reserved in the product catalog; this MVP has no creative editor, so it has no launcher.
 
 This branding update preserves persisted `doc`, `sheet`, and `slides` kinds, the `syrka-office-v1` browser storage key, `office_files` database table, `office-assets` private bucket, editor JSON models and file formats. The app continues to use its original `/` entry point; no public routes were removed or changed, so no URL redirects are needed. Existing user file names and content are never rewritten for branding. Internal editor filenames remain stable.
+
+## Brand and device downloads
+
+The interface uses Syrka’s monochrome symbol and wordmark, including a matching app icon, while retaining the original layout. Existing document formatting and presentation colors are unchanged.
+
+Every file card and editor header has a **Download** menu. Write exports a self-contained HTML document with embedded images; Present exports PPTX. Every file can also download a versioned `.syrka.json` backup with embedded images. Tables backups preserve all worksheets, cell formulas and formatting; active-sheet CSV remains available in the Tables toolbar. Backups are downloadable JSON; importing backups is not yet implemented. HTML opens in a browser and can be printed to PDF. These downloads do not claim full Office format compatibility.
