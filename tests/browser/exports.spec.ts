@@ -151,7 +151,7 @@ const slides = {
   ],
 };
 async function prepare(page: Page) {
-  await page.goto("/");
+  await page.goto("/workspace");
   await page.evaluate(
     ({ rich, workbook, slides }) => {
       sessionStorage.setItem("syrka-workspace-demo", "true");

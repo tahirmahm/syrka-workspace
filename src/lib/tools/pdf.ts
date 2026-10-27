@@ -1,4 +1,5 @@
 import { PDFDocument } from "pdf-lib";
+import {workspacePath} from "../paths";
 import { nextFrame, parsePages, readImage, validatePdf } from "./utils";
 export async function loadPdf(file: File) {
   await validatePdf(file);
@@ -113,7 +114,7 @@ export async function pdfToImages(
 ): Promise<RenderedPage[]> {
   await validatePdf(file);
   const pdfjs = await import("pdfjs-dist");
-  pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+  pdfjs.GlobalWorkerOptions.workerSrc = workspacePath("/pdf.worker.min.mjs");
   const task = pdfjs.getDocument({
     data: new Uint8Array(await file.arrayBuffer()),
   });

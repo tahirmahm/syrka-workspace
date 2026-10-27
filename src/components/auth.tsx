@@ -6,6 +6,7 @@ import { Button } from "./ui/button";
 import { suiteName } from "@/lib/model";
 import { supabase, cloudConfigError } from "@/lib/storage";
 import { authErrorMessage } from "@/lib/cloud-config";
+import {workspacePath} from "@/lib/paths";
 export function Auth({
   onDemo,
   initialMessage = "",
@@ -54,7 +55,7 @@ export function Auth({
         ? await supabase.auth.signUp({
             ...credentials,
             options: {
-              emailRedirectTo: `${window.location.origin}/auth/callback`,
+              emailRedirectTo: `${window.location.origin}${workspacePath("/auth/callback")}`,
             },
           })
         : await supabase.auth.signInWithPassword(credentials);

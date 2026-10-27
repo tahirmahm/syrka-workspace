@@ -3,7 +3,8 @@
 - Repository: https://github.com/tahirmahm/syrka-workspace
 - Vercel project: syrka-workspace
 - Production branch: main
-- Production domain: https://syrka-workspace.vercel.app
+- Workspace address: https://syrka.co/workspace
+- Standalone/compatibility domain: https://syrka-workspace.vercel.app
 - Supabase project: Syrka Workspace, zguejzlseldovdssiumn
 
 ## Release
@@ -35,3 +36,11 @@ The database table is `public.office_files`, with owner-based SELECT/INSERT/UPDA
 - QA accounts and their files must be removed only by exact test IDs/markers, without touching real users.
 
 Tools are public and browser-only. They require no Supabase credentials or uploads. Office exports run locally; private document images are retrieved with the existing authenticated storage access and embedded into the user's download.
+
+## Shared syrka.co path
+
+The Workspace Next.js app uses `basePath: /workspace`. Native Next links and assets inherit it; the PDF worker and auth callback use `workspacePath()`. Root, legacy Tools URLs and legacy callback URLs on the standalone host redirect to their `/workspace` equivalents. Existing browser-local data on that host retains its storage origin. Browser-local demo data is not automatically shared across hostnames; cloud files remain accessible after sign-in.
+
+`syrka.co` remains assigned to the existing `syrka12` project, repository `tahirmahm/syrka.v12`, production branch `main`. That repository's Vercel config rewrites only `/workspace` and `/workspace/:path*` to the Workspace production host, preserving the prefix. No domain/DNS reassignment or nameserver changes are needed. Deploy Workspace path support first, then merge the root-site rewrite through Git.
+
+Supabase Auth must allow `https://syrka.co/workspace/auth/callback`, and the standalone host's `/workspace/auth/callback` should also be allowed. Existing sign-in continues to use the same dedicated project and ownership policies. The available connector does not expose Auth URL configuration; an administrator must add these redirects in Supabase Auth → URL Configuration.

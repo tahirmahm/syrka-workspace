@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 test('every sample file downloads on desktop and the symbol fits mobile',async({page})=>{
- await page.goto('/');await page.getByRole('button',{name:'Try demo — no account needed',exact:true}).click();
+ await page.goto('/workspace');await page.getByRole('button',{name:'Try demo — no account needed',exact:true}).click();
  await expect(page.locator('.sidebar .syrka-symbol')).toBeVisible();
  for(const [name,label,extension] of [['A fresh start','Download document (.html)','.html'],['Project budget','Download workbook (.syrka.json)','.syrka.json'],['The next chapter','Download PowerPoint (.pptx)','.pptx']]){
   await page.getByLabel(`Download ${name}`,{exact:true}).click();

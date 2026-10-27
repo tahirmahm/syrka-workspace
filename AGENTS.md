@@ -3,7 +3,7 @@
 - GitHub `tahirmahm/syrka-workspace` is the source of truth. Fetch upstream before starting and before pushing; preserve upstream changes and user data.
 - Commit and push completed, tested work. Use feature branches and pull requests for substantial/risky changes. Include branch and commit SHA in completion reports.
 - Before committing run `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, plus relevant browser tests.
-- Production deploys ONLY through Vercel's Git integration from `main` to `https://syrka-workspace.vercel.app`, project `syrka-workspace`. Do not run independent CLI/API deployments unless the user explicitly requests them.
+- Production deploys ONLY through Vercel's Git integration from `main` to the Workspace project (`https://syrka-workspace.vercel.app`, mounted at `https://syrka.co/workspace`), project `syrka-workspace`. Do not run independent CLI/API deployments unless the user explicitly requests them.
 - Verify GitHub commit SHA against production deployment metadata before claiming deployment success.
 - Dedicated Supabase project: `zguejzlseldovdssiumn` (`https://zguejzlseldovdssiumn.supabase.co`), table `public.office_files`, private bucket `office-assets`. Preserve ownership RLS. Never use the old Syrka.V12 project.
 - Only publishable keys may enter frontend configuration. Never commit `.env` files, tokens, service-role keys or build artifacts.
