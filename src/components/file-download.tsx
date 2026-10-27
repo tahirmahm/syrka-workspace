@@ -91,6 +91,13 @@ export function FileDownload({
             ? "Download workbook (.syrka.json)"
             : "Download editable backup (.syrka.json)"}
         </button>
+        {file.kind === "doc" && (
+          <p>
+            PDF embeds Noto fonts; system fonts use a matching Noto family. For
+            Hindi, Urdu or Arabic and exact device fonts, use Write’s Print
+            preview → Save PDF. Footnotes appear as endnotes in downloaded PDFs.
+          </p>
+        )}
         {file.kind === "sheet" && (
           <p>
             XLSX and JSON include all worksheets. Text formats export cell

@@ -8,6 +8,14 @@ const png =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jT0kAAAAASUVORK5CYII=";
 const rich = {
   type: "doc",
+  attrs: {
+    size: "LETTER",
+    landscape: true,
+    margin: 54,
+    header: "Research header",
+    footer: "Syrka",
+    numbers: true,
+  },
   content: [
     {
       type: "heading",
@@ -17,7 +25,22 @@ const rich = {
     {
       type: "paragraph",
       content: [
-        { type: "text", text: "Editable bold text", marks: [{ type: "bold" }] },
+        {
+          type: "text",
+          text: "Editable bold text",
+          marks: [
+            { type: "bold" },
+            {
+              type: "textStyle",
+              attrs: {
+                fontFamily: "Georgia",
+                fontSize: "24px",
+                color: "rgb(51, 102, 153)",
+              },
+            },
+          ],
+        },
+        { type: "footnote", attrs: { number: 1, text: "A verified note." } },
         {
           type: "text",
           text: " Link",
@@ -208,6 +231,17 @@ test("Write exports real editable DOCX, Unicode PDF, TXT, HTML and Markdown", as
       const xml = await zip.file("word/document.xml")!.async("string");
       expect(xml).toContain("Editable bold text");
       expect(xml).toContain("w:tbl");
+      expect(xml).toContain('w:ascii="Georgia"');
+      expect(xml).toContain('w:sz w:val="36"');
+      expect(xml).toContain('w:color w:val="336699"');
+      expect(xml).toContain('w:orient="landscape"');
+      expect(xml).toContain("w:footnoteReference");
+      expect(await zip.file("word/footnotes.xml")!.async("string")).toContain(
+        "A verified note.",
+      );
+      expect(await zip.file("word/header1.xml")!.async("string")).toContain(
+        "Research header",
+      );
       expect(xml).toContain("w:drawing");
       expect(xml).toContain("Café Žluťoučký");
     } else if (ext === "pdf")
@@ -300,11 +334,32 @@ test("Present PPTX has editable elements; PDF and slide image selections contain
   ]);
 });
 
-test('empty editors still produce valid standard files',async({page})=>{
- await prepare(page);
- await page.evaluate(()=>{const files=JSON.parse(localStorage.getItem('syrka-office-v1')!);files[0].content={type:'doc',content:[]};for(const sheet of Object.values(files[1].content.sheets) as {cellData:object}[])sheet.cellData={};files[2].content.slides.forEach((slide:{elements:unknown[]})=>{slide.elements=[];});localStorage.setItem('syrka-office-v1',JSON.stringify(files));});
- await page.reload();
- await page.getByLabel('Download Writing Café',{exact:true}).click();const pdf=await save(page,'PDF document (.pdf)');expect((await PDFDocument.load(pdf.data)).getPageCount()).toBe(1);
- await page.getByLabel('Download Numbers',{exact:true}).click();const xlsx=await save(page,'Excel workbook (.xlsx)');const book=new ExcelJS.Workbook();await book.xlsx.load(new Uint8Array(xlsx.data).buffer);expect(book.worksheets).toHaveLength(2);
- await page.getByLabel('Download Story',{exact:true}).click();const pptx=await save(page,'Download PowerPoint (.pptx)');expect((await JSZip.loadAsync(pptx.data)).file('ppt/slides/slide1.xml')).not.toBeNull();
+test("empty editors still produce valid standard files", async ({ page }) => {
+  await prepare(page);
+  await page.evaluate(() => {
+    const files = JSON.parse(localStorage.getItem("syrka-office-v1")!);
+    files[0].content = { type: "doc", content: [] };
+    for (const sheet of Object.values(files[1].content.sheets) as {
+      cellData: object;
+    }[])
+      sheet.cellData = {};
+    files[2].content.slides.forEach((slide: { elements: unknown[] }) => {
+      slide.elements = [];
+    });
+    localStorage.setItem("syrka-office-v1", JSON.stringify(files));
+  });
+  await page.reload();
+  await page.getByLabel("Download Writing Café", { exact: true }).click();
+  const pdf = await save(page, "PDF document (.pdf)");
+  expect((await PDFDocument.load(pdf.data)).getPageCount()).toBe(1);
+  await page.getByLabel("Download Numbers", { exact: true }).click();
+  const xlsx = await save(page, "Excel workbook (.xlsx)");
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.load(new Uint8Array(xlsx.data).buffer);
+  expect(book.worksheets).toHaveLength(2);
+  await page.getByLabel("Download Story", { exact: true }).click();
+  const pptx = await save(page, "Download PowerPoint (.pptx)");
+  expect(
+    (await JSZip.loadAsync(pptx.data)).file("ppt/slides/slide1.xml"),
+  ).not.toBeNull();
 });

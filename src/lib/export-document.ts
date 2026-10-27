@@ -1,8 +1,13 @@
+import { writePoints, wordColor } from "./write-units";
 import type { JSONContent } from "@tiptap/core";
+import { defaultWriteStyles, type WriteStyle } from "./write-styles";
+import { pageSettings } from "./write-model";
 import { embeddedImage } from "./export-file";
 export function nodeText(node: JSONContent): string {
   if (node.type === "text") return node.text || "";
   if (node.type === "hardBreak") return "\n";
+  if (node.type === "footnote")
+    return `[${node.attrs?.number}: ${node.attrs?.text}]`;
   return (node.content || [])
     .map(nodeText)
     .join(
@@ -48,6 +53,7 @@ export async function documentMarkdown(
     return text;
   }
   if (node.type === "hardBreak") return "  \n";
+  if (node.type === "footnote") return `^[${node.attrs?.text}]`;
   if (node.type === "image") {
     const alt = String(node.attrs?.alt || "");
     const source = alt.startsWith("asset:")
@@ -174,19 +180,46 @@ export async function buildDocx(content: JSONContent, name: string) {
   type Inline =
     | InstanceType<typeof D.TextRun>
     | InstanceType<typeof D.ExternalHyperlink>
-    | InstanceType<typeof D.ImageRun>;
+    | InstanceType<typeof D.ImageRun>
+    | InstanceType<typeof D.FootnoteReferenceRun>;
   type Block = InstanceType<typeof D.Paragraph> | InstanceType<typeof D.Table>;
   type NumberingDefinition = NonNullable<
     ConstructorParameters<typeof D.Document>[0]["numbering"]
   >["config"][number];
   const numbering: { config: NumberingDefinition[] } = { config: [] };
+  const footnotes: Record<
+    string,
+    { children: InstanceType<typeof D.Paragraph>[] }
+  > = {};
+  let noteId = 0;
   let listId = 0;
   async function inline(nodes: JSONContent[]): Promise<Inline[]> {
     const result: Inline[] = [];
     for (const node of nodes) {
-      if (node.type === "text") {
+      if (node.type === "footnote") {
+        const id = ++noteId;
+        footnotes[String(id)] = {
+          children: [new D.Paragraph(String(node.attrs?.text || ""))],
+        };
+        result.push(new D.FootnoteReferenceRun(id));
+      } else if (node.type === "text") {
         const marks = node.marks || [];
+        const style = marks.find((m) => m.type === "textStyle")?.attrs || {};
         const run = new D.TextRun({
+          size: style.fontSize
+            ? Math.round(writePoints(style.fontSize) * 2)
+            : undefined,
+          color: style.color ? wordColor(style.color) : undefined,
+          superScript: marks.some((m) => m.type === "superscript"),
+          subScript: marks.some((m) => m.type === "subscript"),
+          shading: marks.find((m) => m.type === "highlight")
+            ? {
+                fill: wordColor(
+                  marks.find((m) => m.type === "highlight")?.attrs?.color ||
+                    "#FFFF00",
+                ),
+              }
+            : undefined,
           text: node.text || "",
           bold: marks.some((m) => m.type === "bold"),
           italics: marks.some((m) => m.type === "italic"),
@@ -194,7 +227,7 @@ export async function buildDocx(content: JSONContent, name: string) {
           underline: marks.some((m) => m.type === "underline") ? {} : undefined,
           font: marks.some((m) => m.type === "code")
             ? "Courier New"
-            : undefined,
+            : style.fontFamily || undefined,
         });
         const link = marks.find((m) => m.type === "link");
         result.push(
@@ -214,7 +247,11 @@ export async function buildDocx(content: JSONContent, name: string) {
             ? alt.slice(6)
             : String(node.attrs?.src || ""),
         );
-        const ratio = Math.min(1, 600 / asset.width, 700 / asset.height);
+        const ratio = Math.min(
+          1,
+          (Number(node.attrs?.width) || 600) / asset.width,
+          (Number(node.attrs?.height) || 700) / asset.height,
+        );
         result.push(
           new D.ImageRun({
             data: asset.bytes,
@@ -271,8 +308,13 @@ export async function buildDocx(content: JSONContent, name: string) {
                 children: await blocks(cell.content || []),
                 columnSpan: Number(cell.attrs?.colspan) || 1,
                 rowSpan: Number(cell.attrs?.rowspan) || 1,
-                shading:
-                  cell.type === "tableHeader" ? { fill: "EDF2E9" } : undefined,
+                shading: cell.attrs?.backgroundColor
+                  ? {
+                      fill: wordColor(cell.attrs.backgroundColor),
+                    }
+                  : cell.type === "tableHeader"
+                    ? { fill: "EDF2E9" }
+                    : undefined,
               }),
             );
           rows.push(new D.TableRow({ children: cells }));
@@ -304,17 +346,36 @@ export async function buildDocx(content: JSONContent, name: string) {
         }[String(node.attrs?.level) as "1"];
         result.push(
           new D.Paragraph({
-            children: await inline(
-              node.type === "image" ? [node] : node.content || [],
-            ),
+            children: [
+              ...(node.type === "heading" && node.attrs?.headingNumber
+                ? [new D.TextRun(node.attrs.headingNumber + " ")]
+                : []),
+              ...(await inline(
+                node.type === "image" ? [node] : node.content || [],
+              )),
+            ],
+            style: node.type !== "heading" ? node.attrs?.styleName : undefined,
             heading: node.type === "heading" ? heading : undefined,
             alignment,
             bullet: list?.bullet ? { level: Math.min(depth, 8) } : undefined,
             numbering: list?.reference
               ? { reference: list.reference, level: Math.min(depth, 8) }
               : undefined,
-            spacing: { after: 160 },
-            indent: depth && !list ? { left: 360 * depth } : undefined,
+            shading: node.attrs?.background
+              ? { fill: wordColor(node.attrs.background) }
+              : undefined,
+            bidirectional: node.attrs?.direction === "rtl",
+            pageBreakBefore: node.type === "pageBreak",
+            keepNext: node.type === "heading",
+            spacing: {
+              after: Number(node.attrs?.spaceAfter ?? 8) * 20,
+              line: Number(node.attrs?.lineHeight || 1.5) * 240,
+            },
+            indent: Number(node.attrs?.indent)
+              ? { left: Number(node.attrs?.indent) * 20 }
+              : depth && !list
+                ? { left: 360 * depth }
+                : undefined,
           }),
         );
       }
@@ -322,12 +383,78 @@ export async function buildDocx(content: JSONContent, name: string) {
     return result;
   }
   const children = await blocks(content.content || []);
+  const page = pageSettings(content);
+  const sizes = {
+    A4: [11906, 16838],
+    LETTER: [12240, 15840],
+    LEGAL: [12240, 20160],
+  };
   const doc = new D.Document({
     title: name,
     creator: "Syrka Write",
     numbering,
+    footnotes,
+    styles: {
+      paragraphStyles: Object.entries(
+        (content.attrs?.styles || defaultWriteStyles) as Record<
+          string,
+          WriteStyle
+        >,
+      ).map(([id, style]) => ({
+        id,
+        name: id,
+        run: {
+          font: style.paragraphFont,
+          size: style.paragraphSize * 2,
+          bold: style.paragraphBold,
+          italics: style.paragraphItalic,
+        },
+        paragraph: {
+          spacing: {
+            line: style.lineHeight * 240,
+            after: style.spaceAfter * 20,
+          },
+        },
+      })),
+    },
     sections: [
-      { children: children.length ? children : [new D.Paragraph("")] },
+      {
+        properties: {
+          page: {
+            size: {
+              width: sizes[page.size][0],
+              height: sizes[page.size][1],
+              orientation: page.landscape
+                ? D.PageOrientation.LANDSCAPE
+                : D.PageOrientation.PORTRAIT,
+            },
+            margin: {
+              top: page.margin * 20,
+              right: page.margin * 20,
+              bottom: page.margin * 20,
+              left: page.margin * 20,
+            },
+          },
+        },
+        headers: {
+          default: new D.Header({ children: [new D.Paragraph(page.header)] }),
+        },
+        footers: {
+          default: new D.Footer({
+            children: [
+              new D.Paragraph({
+                children: [
+                  new D.TextRun(page.footer),
+                  ...(page.numbers
+                    ? [new D.TextRun({ children: [D.PageNumber.CURRENT] })]
+                    : []),
+                ],
+              }),
+            ],
+          }),
+        },
+        children: children.length ? children : [new D.Paragraph("")],
+      },
     ],
   });
   return D.Packer.toBlob(doc);
