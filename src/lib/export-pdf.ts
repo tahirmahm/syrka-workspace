@@ -1,3 +1,4 @@
+import { writePoints } from "./write-units";
 import { loadWriteFonts, pdfFontFamily, writePdfFonts } from "./write-fonts";
 import { pageSettings, pageDimensions } from "./write-model";
 import type { JSONContent } from "@tiptap/core";
@@ -58,7 +59,7 @@ export async function buildDocumentPdf(root: JSONContent, name: string) {
       return {
         text: node.text || "",
         font: style.fontFamily ? pdfFontFamily(style.fontFamily) : undefined,
-        fontSize: style.fontSize ? parseFloat(style.fontSize) : undefined,
+        fontSize: style.fontSize ? writePoints(style.fontSize) : undefined,
         color: style.color || undefined,
         background:
           marks.find((m) => m.type === "highlight")?.attrs?.color || undefined,

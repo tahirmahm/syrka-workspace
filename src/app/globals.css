@@ -49,3 +49,4 @@
 @font-face{font-family:"Noto Serif";font-style:italic;font-weight:700;font-display:swap;src:url("/workspace/fonts/NotoSerif-BoldItalic.ttf") format("truetype")}
 @font-face{font-family:"Noto Sans Mono";font-style:normal;font-weight:400;font-display:swap;src:url("/workspace/fonts/NotoSansMono-Regular.ttf") format("truetype")}
 @font-face{font-family:"Noto Sans Mono";font-style:normal;font-weight:700;font-display:swap;src:url("/workspace/fonts/NotoSansMono-Bold.ttf") format("truetype")}.write-page .tiptap [data-heading-number]::before{content:attr(data-heading-number) ' '}
+dialog.write-preview{margin:0;padding:0;border:0;width:100vw;height:100dvh;max-width:none;max-height:none}

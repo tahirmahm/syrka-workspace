@@ -1,3 +1,4 @@
+import { writePoints } from "./write-units";
 import { Plugin } from "@tiptap/pm/state";
 import { Extension, Node, InputRule } from "@tiptap/core";
 import { defaultWriteStyles } from "./write-styles";
@@ -78,7 +79,8 @@ export const WriteAttributes = Extension.create({
           },
           paragraphSize: {
             default: null,
-            parseHTML: (e) => parseFloat(e.style.fontSize) || null,
+            parseHTML: (e) =>
+              e.style.fontSize ? writePoints(e.style.fontSize) : null,
             renderHTML: (a) =>
               a.paragraphSize
                 ? { style: `font-size:${a.paragraphSize}pt` }
@@ -156,7 +158,12 @@ export const WriteAutocorrect = Extension.create({
             !String(state.doc.attrs.language).startsWith("en")
           )
             return null;
-          const $pos = state.doc.resolve(Math.max(range.from,Math.min(state.doc.content.size,range.to-2)));
+          const $pos = state.doc.resolve(
+            Math.max(
+              range.from,
+              Math.min(state.doc.content.size, range.to - 2),
+            ),
+          );
           if (
             $pos.parent.type.spec.code ||
             $pos.marks().some((m) => ["code", "link"].includes(m.type.name))
@@ -194,7 +201,12 @@ export const WriteAutocorrect = Extension.create({
           )
             return null;
           const pos = state.doc.resolve(range.from);
-          if(/(?:https?:\/\/|www\.)\S*$/.test(state.doc.textBetween(pos.start(),range.from,"","")))return null;
+          if (
+            /(?:https?:\/\/|www\.)\S*$/.test(
+              state.doc.textBetween(pos.start(), range.from, "", ""),
+            )
+          )
+            return null;
           if (
             pos.parent.type.spec.code ||
             pos.marks().some((m) => ["code", "link"].includes(m.type.name))

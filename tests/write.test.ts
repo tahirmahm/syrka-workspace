@@ -1,3 +1,4 @@
+import { writePoints } from "../src/lib/write-units";
 import { describe, it, expect } from "vitest";
 import {
   defaultPage,
@@ -72,4 +73,11 @@ describe("Write compatible model", () => {
     );
     expect(Object.keys(academicTemplates)).toHaveLength(8);
   });
+});
+
+it("normalizes imported CSS lengths for Office and PDF", () => {
+  expect(writePoints("16px")).toBe(12);
+  expect(writePoints("18pt")).toBe(18);
+  expect(writePoints("1in")).toBe(72);
+  expect(writePoints("bad")).toBe(12);
 });

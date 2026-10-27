@@ -317,3 +317,30 @@ test("Write ribbon remains usable on mobile and via keyboard", async ({
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);
 });
+test("cancelled imports preserve content and preview closes with Escape", async ({
+  page,
+}) => {
+  const original = await page.locator(".tiptap").textContent();
+  await page.getByRole("tab", { name: "Insert", exact: true }).click();
+  page.once("dialog", (d) => d.dismiss());
+  await page
+    .getByLabel("Import document", { exact: true })
+    .setInputFiles({
+      name: "cancelled.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("Should never replace the original"),
+    });
+  await expect(page.locator(".tiptap")).toHaveText(original!);
+  await expect(page.getByText(/Import complete/)).toHaveCount(0);
+  await page.getByRole("button", { name: "Print", exact: true }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Print preview" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Print preview" })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole("button", { name: "Print", exact: true }),
+  ).toBeFocused();
+});

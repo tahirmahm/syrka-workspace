@@ -1,4 +1,5 @@
 "use client";
+import { writePoints } from "@/lib/write-units";
 import { useEffect, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -75,6 +76,7 @@ export default function WriteEditor({
   } | null>(null);
   const [tab, setTab] = useState("Home");
   const [zoom, setZoom] = useState(100);
+  const [importing, setImporting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [, refresh] = useState(0);
   const editor = useEditor({
@@ -295,8 +297,9 @@ export default function WriteEditor({
                 const preset: WriteStyle = {
                   paragraphFont:
                     text.fontFamily || attrs.paragraphFont || "Noto Sans",
-                  paragraphSize:
-                    parseFloat(text.fontSize) || attrs.paragraphSize || 12,
+                  paragraphSize: text.fontSize
+                    ? writePoints(text.fontSize)
+                    : attrs.paragraphSize || 12,
                   paragraphBold: editor.isActive("bold") || attrs.paragraphBold,
                   paragraphItalic:
                     editor.isActive("italic") || attrs.paragraphItalic,
@@ -653,10 +656,12 @@ export default function WriteEditor({
               <input
                 type="file"
                 aria-label="Import document"
+                disabled={importing}
                 accept=".docx,.html,.htm,.txt"
                 onChange={async (e) => {
                   const f = e.target.files?.[0];
                   if (!f) return;
+                  setImporting(true);
                   try {
                     let html = "";
                     if (f.name.toLowerCase().endsWith(".docx")) {
@@ -678,14 +683,16 @@ export default function WriteEditor({
                       confirm(
                         "Replace this document’s content with the imported file? Undo remains available. Unsupported Word layout, references and fonts may be lost. Download a backup first.",
                       )
-                    )
+                    ) {
                       editor.commands.setContent(clean);
+                    } else return;
                     setError(
                       "Import complete. Review formatting: unsupported Word features may be omitted.",
                     );
                   } catch (err) {
                     setError(String(err));
                   } finally {
+                    setImporting(false);
                     e.target.value = "";
                   }
                 }}
@@ -1041,6 +1048,11 @@ export default function WriteEditor({
         <div className="error" role="alert">
           {error}
           <button onClick={() => setError("")}>Dismiss</button>
+        </div>
+      )}
+      {importing && (
+        <div role="status" className="demo-notice">
+          Importing document…
         </div>
       )}
       {uploading && (

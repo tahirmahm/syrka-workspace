@@ -34,8 +34,8 @@ const rich = {
               type: "textStyle",
               attrs: {
                 fontFamily: "Georgia",
-                fontSize: "18pt",
-                color: "#336699",
+                fontSize: "24px",
+                color: "rgb(51, 102, 153)",
               },
             },
           ],
@@ -233,6 +233,7 @@ test("Write exports real editable DOCX, Unicode PDF, TXT, HTML and Markdown", as
       expect(xml).toContain("w:tbl");
       expect(xml).toContain('w:ascii="Georgia"');
       expect(xml).toContain('w:sz w:val="36"');
+      expect(xml).toContain('w:color w:val="336699"');
       expect(xml).toContain('w:orient="landscape"');
       expect(xml).toContain("w:footnoteReference");
       expect(await zip.file("word/footnotes.xml")!.async("string")).toContain(

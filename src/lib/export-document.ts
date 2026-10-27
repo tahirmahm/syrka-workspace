@@ -1,3 +1,4 @@
+import { writePoints, wordColor } from "./write-units";
 import type { JSONContent } from "@tiptap/core";
 import { defaultWriteStyles, type WriteStyle } from "./write-styles";
 import { pageSettings } from "./write-model";
@@ -205,16 +206,18 @@ export async function buildDocx(content: JSONContent, name: string) {
         const marks = node.marks || [];
         const style = marks.find((m) => m.type === "textStyle")?.attrs || {};
         const run = new D.TextRun({
-          size: style.fontSize ? parseFloat(style.fontSize) * 2 : undefined,
-          color: style.color?.replace("#", ""),
+          size: style.fontSize
+            ? Math.round(writePoints(style.fontSize) * 2)
+            : undefined,
+          color: style.color ? wordColor(style.color) : undefined,
           superScript: marks.some((m) => m.type === "superscript"),
           subScript: marks.some((m) => m.type === "subscript"),
           shading: marks.find((m) => m.type === "highlight")
             ? {
-                fill: String(
+                fill: wordColor(
                   marks.find((m) => m.type === "highlight")?.attrs?.color ||
-                    "FFFF00",
-                ).replace("#", ""),
+                    "#FFFF00",
+                ),
               }
             : undefined,
           text: node.text || "",
@@ -307,7 +310,7 @@ export async function buildDocx(content: JSONContent, name: string) {
                 rowSpan: Number(cell.attrs?.rowspan) || 1,
                 shading: cell.attrs?.backgroundColor
                   ? {
-                      fill: String(cell.attrs.backgroundColor).replace("#", ""),
+                      fill: wordColor(cell.attrs.backgroundColor),
                     }
                   : cell.type === "tableHeader"
                     ? { fill: "EDF2E9" }
@@ -359,7 +362,7 @@ export async function buildDocx(content: JSONContent, name: string) {
               ? { reference: list.reference, level: Math.min(depth, 8) }
               : undefined,
             shading: node.attrs?.background
-              ? { fill: String(node.attrs.background).replace("#", "") }
+              ? { fill: wordColor(node.attrs.background) }
               : undefined,
             bidirectional: node.attrs?.direction === "rtl",
             pageBreakBefore: node.type === "pageBreak",

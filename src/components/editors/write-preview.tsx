@@ -25,7 +25,20 @@ export default function WritePreview({
   page: PageSettings;
   onClose: () => void;
 }) {
+  const dialog = useRef<HTMLDialogElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
+  useEffect(() => {
+    const element = dialog.current;
+    if (!element) return;
+    const previous = document.activeElement as HTMLElement | null;
+    element.showModal();
+    return () => {
+      element.close();
+      requestAnimationFrame(() => {
+        if (previous?.isConnected) previous.focus();
+      });
+    };
+  }, []);
   const [status, setStatus] = useState("Laying out pages…");
   const [ready, setReady] = useState(false);
   useEffect(() => {
@@ -115,7 +128,12 @@ export default function WritePreview({
     };
   }, [html, page]);
   return (
-    <section
+    <dialog
+      ref={dialog}
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
       role="dialog"
       aria-modal="true"
       aria-label="Print preview"
@@ -137,6 +155,6 @@ export default function WritePreview({
         <span role="status">{status}</span>
       </div>
       <iframe ref={frame} title="Paginated document" />
-    </section>
+    </dialog>
   );
 }
