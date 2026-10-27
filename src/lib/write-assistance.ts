@@ -13,6 +13,16 @@ export function writingSuggestions(
   if (!language.startsWith("en")) return [];
   const result: Suggestion[] = [];
   const rules: [RegExp, (m: RegExpExecArray) => string, string][] = [
+    [
+      /(?:^|[.!?]\s+)([a-z])([a-z]{1,})\b/g,
+      (m) =>
+        m[0].slice(0, m[0].length - m[1].length - m[2].length) +
+        m[1].toUpperCase() +
+        m[2],
+      "Possible sentence capitalization",
+    ],
+    [/\s+([,;:!?])/g, (m) => m[1], "Space before punctuation"],
+    [/\b(They|We|You) is\b/g, (m) => m[1] + " are", "Subject–verb agreement"],
     [/\bi\b/g, () => "I", "Capitalise the English pronoun"],
     [
       /\b(teh|recieve|seperate|definately|occured)\b/gi,

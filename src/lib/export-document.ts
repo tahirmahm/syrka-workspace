@@ -1,9 +1,12 @@
 import type { JSONContent } from "@tiptap/core";
+import { defaultWriteStyles, type WriteStyle } from "./write-styles";
 import { pageSettings } from "./write-model";
 import { embeddedImage } from "./export-file";
 export function nodeText(node: JSONContent): string {
   if (node.type === "text") return node.text || "";
   if (node.type === "hardBreak") return "\n";
+  if (node.type === "footnote")
+    return `[${node.attrs?.number}: ${node.attrs?.text}]`;
   return (node.content || [])
     .map(nodeText)
     .join(
@@ -49,6 +52,7 @@ export async function documentMarkdown(
     return text;
   }
   if (node.type === "hardBreak") return "  \n";
+  if (node.type === "footnote") return `^[${node.attrs?.text}]`;
   if (node.type === "image") {
     const alt = String(node.attrs?.alt || "");
     const source = alt.startsWith("asset:")
@@ -175,17 +179,29 @@ export async function buildDocx(content: JSONContent, name: string) {
   type Inline =
     | InstanceType<typeof D.TextRun>
     | InstanceType<typeof D.ExternalHyperlink>
-    | InstanceType<typeof D.ImageRun>;
+    | InstanceType<typeof D.ImageRun>
+    | InstanceType<typeof D.FootnoteReferenceRun>;
   type Block = InstanceType<typeof D.Paragraph> | InstanceType<typeof D.Table>;
   type NumberingDefinition = NonNullable<
     ConstructorParameters<typeof D.Document>[0]["numbering"]
   >["config"][number];
   const numbering: { config: NumberingDefinition[] } = { config: [] };
+  const footnotes: Record<
+    string,
+    { children: InstanceType<typeof D.Paragraph>[] }
+  > = {};
+  let noteId = 0;
   let listId = 0;
   async function inline(nodes: JSONContent[]): Promise<Inline[]> {
     const result: Inline[] = [];
     for (const node of nodes) {
-      if (node.type === "text") {
+      if (node.type === "footnote") {
+        const id = ++noteId;
+        footnotes[String(id)] = {
+          children: [new D.Paragraph(String(node.attrs?.text || ""))],
+        };
+        result.push(new D.FootnoteReferenceRun(id));
+      } else if (node.type === "text") {
         const marks = node.marks || [];
         const style = marks.find((m) => m.type === "textStyle")?.attrs || {};
         const run = new D.TextRun({
@@ -228,7 +244,11 @@ export async function buildDocx(content: JSONContent, name: string) {
             ? alt.slice(6)
             : String(node.attrs?.src || ""),
         );
-        const ratio = Math.min(1, 600 / asset.width, 700 / asset.height);
+        const ratio = Math.min(
+          1,
+          (Number(node.attrs?.width) || 600) / asset.width,
+          (Number(node.attrs?.height) || 700) / asset.height,
+        );
         result.push(
           new D.ImageRun({
             data: asset.bytes,
@@ -285,8 +305,13 @@ export async function buildDocx(content: JSONContent, name: string) {
                 children: await blocks(cell.content || []),
                 columnSpan: Number(cell.attrs?.colspan) || 1,
                 rowSpan: Number(cell.attrs?.rowspan) || 1,
-                shading:
-                  cell.type === "tableHeader" ? { fill: "EDF2E9" } : undefined,
+                shading: cell.attrs?.backgroundColor
+                  ? {
+                      fill: String(cell.attrs.backgroundColor).replace("#", ""),
+                    }
+                  : cell.type === "tableHeader"
+                    ? { fill: "EDF2E9" }
+                    : undefined,
               }),
             );
           rows.push(new D.TableRow({ children: cells }));
@@ -318,14 +343,23 @@ export async function buildDocx(content: JSONContent, name: string) {
         }[String(node.attrs?.level) as "1"];
         result.push(
           new D.Paragraph({
-            children: await inline(
-              node.type === "image" ? [node] : node.content || [],
-            ),
+            children: [
+              ...(node.type === "heading" && node.attrs?.headingNumber
+                ? [new D.TextRun(node.attrs.headingNumber + " ")]
+                : []),
+              ...(await inline(
+                node.type === "image" ? [node] : node.content || [],
+              )),
+            ],
+            style: node.type !== "heading" ? node.attrs?.styleName : undefined,
             heading: node.type === "heading" ? heading : undefined,
             alignment,
             bullet: list?.bullet ? { level: Math.min(depth, 8) } : undefined,
             numbering: list?.reference
               ? { reference: list.reference, level: Math.min(depth, 8) }
+              : undefined,
+            shading: node.attrs?.background
+              ? { fill: String(node.attrs.background).replace("#", "") }
               : undefined,
             bidirectional: node.attrs?.direction === "rtl",
             pageBreakBefore: node.type === "pageBreak",
@@ -356,6 +390,30 @@ export async function buildDocx(content: JSONContent, name: string) {
     title: name,
     creator: "Syrka Write",
     numbering,
+    footnotes,
+    styles: {
+      paragraphStyles: Object.entries(
+        (content.attrs?.styles || defaultWriteStyles) as Record<
+          string,
+          WriteStyle
+        >,
+      ).map(([id, style]) => ({
+        id,
+        name: id,
+        run: {
+          font: style.paragraphFont,
+          size: style.paragraphSize * 2,
+          bold: style.paragraphBold,
+          italics: style.paragraphItalic,
+        },
+        paragraph: {
+          spacing: {
+            line: style.lineHeight * 240,
+            after: style.spaceAfter * 20,
+          },
+        },
+      })),
+    },
     sections: [
       {
         properties: {

@@ -25,6 +25,23 @@ describe("Write compatible model", () => {
         content: [{ type: "futureEquation" }],
       }),
     ).toEqual(["futureEquation"]);
+    expect(
+      inspectWriteDocument({
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: "Future",
+                marks: [{ type: "unknownFormat" }],
+              },
+            ],
+          },
+        ],
+      }),
+    ).toEqual(["mark:unknownFormat"]);
     expect(pageSettings({ attrs: { margin: 900, size: "wrong" } }).margin).toBe(
       144,
     );

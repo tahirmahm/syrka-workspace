@@ -1,5 +1,8 @@
 import type { JSONContent } from "@tiptap/core";
 export const writeFonts = [
+  "Noto Sans",
+  "Noto Serif",
+  "Noto Sans Mono",
   "Arial",
   "Georgia",
   "Times New Roman",
@@ -73,10 +76,25 @@ export function inspectWriteDocument(doc: JSONContent) {
     "blockquote",
     "codeBlock",
     "pageBreak",
+    "footnote",
   ]);
   const unknown = new Set<string>();
   function walk(n: JSONContent) {
     if (!supported.has(n.type || "")) unknown.add(n.type || "unknown");
+    const marks = new Set([
+      "bold",
+      "italic",
+      "underline",
+      "strike",
+      "code",
+      "link",
+      "textStyle",
+      "highlight",
+      "subscript",
+      "superscript",
+    ]);
+    for (const mark of n.marks || [])
+      if (!marks.has(mark.type)) unknown.add(`mark:${mark.type}`);
     n.content?.forEach(walk);
   }
   walk(doc);

@@ -38,16 +38,11 @@ import Highlight from "@tiptap/extension-highlight";
 import Subscript from "@tiptap/extension-subscript";
 import Superscript from "@tiptap/extension-superscript";
 import {
-  writingSuggestions,
-  academicTemplates,
-  citation,
-  bibliography,
-  type Source,
-} from "@/lib/write-assistance";
-import {
   WriteAttributes,
   PageBreak,
   WriteAutocorrect,
+  Footnote,
+  HeadingNumbers,
 } from "@/lib/write-extensions";
 import {
   writeFonts,
@@ -55,6 +50,11 @@ import {
   pageDimensions,
   inspectWriteDocument,
 } from "@/lib/write-model";
+import { defaultWriteStyles, type WriteStyle } from "@/lib/write-styles";
+import { sanitizeWriteHtml } from "@/lib/write-import";
+import WriteReview from "./write-review";
+import WriteReferences from "./write-references";
+import WritePreview from "./write-preview";
 import { Button } from "../ui/button";
 import { uploadImage, resolveImage } from "@/lib/storage";
 export default function WriteEditor({
@@ -64,34 +64,25 @@ export default function WriteEditor({
   content: Record<string, unknown>;
   onChange: (content: Record<string, unknown>) => void;
 }) {
+  const [preview, setPreview] = useState<{
+    html: string;
+    page: ReturnType<typeof pageSettings>;
+  } | null>(null);
   const [error, setError] = useState("");
-  const [ignored, setIgnored] = useState<string[]>([]);
-  const [source, setSource] = useState<Source>({
-    author: "",
-    title: "",
-    year: "",
-    publisher: "",
-    doi: "",
-    url: "",
-  });
-  const [citationStyle, setCitationStyle] = useState("APA");
-  const [sources, setSources] = useState<Source[]>(() =>
-    Array.isArray(
-      content.attrs && (content.attrs as Record<string, unknown>).sources,
-    )
-      ? (content.attrs as { sources: Source[] }).sources
-      : [],
-  );
+  const [paint, setPaint] = useState<{
+    attrs: Record<string, unknown>;
+    marks: { type: string; attrs?: Record<string, unknown> }[];
+  } | null>(null);
   const [tab, setTab] = useState("Home");
   const [zoom, setZoom] = useState(100);
-  const [find, setFind] = useState("");
-  const [replacement, setReplacement] = useState("");
   const [uploading, setUploading] = useState(false);
   const [, refresh] = useState(0);
   const editor = useEditor({
     extensions: [
       WriteAttributes,
       WriteAutocorrect,
+      Footnote,
+      HeadingNumbers,
       PageBreak,
       TextStyle,
       FontFamily,
@@ -107,12 +98,23 @@ export default function WriteEditor({
       TableRow,
       TableHeader,
       TableCell,
-      Image.configure({ allowBase64: true }),
+      Image.configure({
+        allowBase64: true,
+        resize: {
+          enabled: true,
+          minWidth: 32,
+          minHeight: 32,
+          alwaysPreserveAspectRatio: true,
+        },
+      }),
       TextAlign.configure({ types: ["heading", "paragraph"] }),
     ],
-    content:inspectWriteDocument(content).length?{type:"doc",content:[{type:"paragraph"}]}:content,
-    editable:inspectWriteDocument(content).length===0,
+    content: inspectWriteDocument(content).length
+      ? { type: "doc", content: [{ type: "paragraph" }] }
+      : content,
+    editable: inspectWriteDocument(content).length === 0,
     immediatelyRender: false,
+    editorProps: { transformPastedHTML: sanitizeWriteHtml },
     onUpdate: ({ editor }) => {
       const json = editor.getJSON();
       function clean(node: JSONContent) {
@@ -155,7 +157,7 @@ export default function WriteEditor({
     );
   if (!editor) return <div className="loading">Loading document…</div>;
   const page = pageSettings(editor.getJSON());
-  const [pageWidth] = pageDimensions(page);
+  const [pageWidth, pageHeight] = pageDimensions(page);
   const setPage = (attrs: Record<string, unknown>) => {
     editor.view.dispatch(
       editor.state.tr.setDocAttribute(
@@ -228,6 +230,13 @@ export default function WriteEditor({
   ];
   return (
     <>
+      {preview && (
+        <WritePreview
+          html={preview.html}
+          page={preview.page}
+          onClose={() => setPreview(null)}
+        />
+      )}
       <div className="write-tabs" role="tablist" aria-label="Write ribbon">
         {["Home", "Insert", "Layout", "References", "Review"].map((t) => (
           <button
@@ -244,10 +253,143 @@ export default function WriteEditor({
         {tab === "Home" && (
           <div className="toolbar">
             <label>
+              Paragraph preset
+              <select
+                aria-label="Paragraph preset"
+                value={
+                  editor.getAttributes(
+                    editor.isActive("heading") ? "heading" : "paragraph",
+                  ).styleName || "Normal"
+                }
+                onChange={(e) => {
+                  const styles =
+                    editor.state.doc.attrs.styles || defaultWriteStyles;
+                  const preset =
+                    styles[e.target.value] ||
+                    defaultWriteStyles[e.target.value];
+                  editor
+                    .chain()
+                    .focus()
+                    .setParagraph()
+                    .updateAttributes("paragraph", {
+                      styleName: e.target.value,
+                      ...preset,
+                    })
+                    .unsetAllMarks()
+                    .run();
+                }}
+              >
+                {Object.keys(defaultWriteStyles).map((name) => (
+                  <option key={name}>{name}</option>
+                ))}
+              </select>
+            </label>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                const attrs = editor.getAttributes(
+                  editor.isActive("heading") ? "heading" : "paragraph",
+                );
+                const name = attrs.styleName || "Normal";
+                const text = editor.getAttributes("textStyle");
+                const preset: WriteStyle = {
+                  paragraphFont:
+                    text.fontFamily || attrs.paragraphFont || "Noto Sans",
+                  paragraphSize:
+                    parseFloat(text.fontSize) || attrs.paragraphSize || 12,
+                  paragraphBold: editor.isActive("bold") || attrs.paragraphBold,
+                  paragraphItalic:
+                    editor.isActive("italic") || attrs.paragraphItalic,
+                  lineHeight: attrs.lineHeight || 1.5,
+                  spaceAfter: attrs.spaceAfter ?? 8,
+                };
+                const styles = {
+                  ...editor.state.doc.attrs.styles,
+                  [name]: preset,
+                };
+                const tr = editor.state.tr.setDocAttribute("styles", styles);
+                editor.state.doc.descendants((n, pos) => {
+                  if (
+                    ["paragraph", "heading"].includes(n.type.name) &&
+                    n.attrs.styleName === name
+                  )
+                    tr.setNodeMarkup(pos, undefined, { ...n.attrs, ...preset });
+                });
+                editor.view.dispatch(tr);
+              }}
+            >
+              Update preset from selection
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                if (!paint) {
+                  const attrs = editor.getAttributes(
+                    editor.isActive("heading") ? "heading" : "paragraph",
+                  );
+                  const marks = (
+                    editor.state.storedMarks ||
+                    editor.state.selection.$from.marks()
+                  )
+                    .filter((m) => m.type.name !== "link")
+                    .map((m) => ({ type: m.type.name, attrs: m.attrs }));
+                  setPaint({ attrs, marks });
+                } else {
+                  editor
+                    .chain()
+                    .focus()
+                    .unsetAllMarks()
+                    .updateAttributes(
+                      editor.isActive("heading") ? "heading" : "paragraph",
+                      paint.attrs,
+                    )
+                    .run();
+                  for (const mark of paint.marks)
+                    editor.commands.setMark(mark.type, mark.attrs);
+                  setPaint(null);
+                }
+              }}
+            >
+              {paint ? "Apply copied format" : "Copy format"}
+            </Button>
+            <label>
+              Paragraph shading
+              <input
+                aria-label="Paragraph shading"
+                type="color"
+                defaultValue="#edf2f9"
+                onChange={(e) => paragraph({ background: e.target.value })}
+              />
+            </label>
+            <Button
+              variant="ghost"
+              disabled={!editor.can().sinkListItem("listItem")}
+              onClick={() =>
+                editor.chain().focus().sinkListItem("listItem").run()
+              }
+            >
+              Nest list
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={!editor.can().liftListItem("listItem")}
+              onClick={() =>
+                editor.chain().focus().liftListItem("listItem").run()
+              }
+            >
+              Unnest list
+            </Button>
+            <label>
               Font
               <select
                 aria-label="Font family"
-                value={editor.getAttributes("textStyle").fontFamily || "Arial"}
+                value={
+                  editor.getAttributes("textStyle").fontFamily ||
+                  editor.getAttributes(
+                    editor.isActive("heading") ? "heading" : "paragraph",
+                  ).paragraphFont ||
+                  "Arial"
+                }
                 onChange={(e) =>
                   editor.chain().focus().setFontFamily(e.target.value).run()
                 }
@@ -261,7 +403,10 @@ export default function WriteEditor({
               Size
               <select
                 aria-label="Font size"
-                value={editor.getAttributes("textStyle").fontSize || "12pt"}
+                value={
+                  editor.getAttributes("textStyle").fontSize ||
+                  `${editor.getAttributes(editor.isActive("heading") ? "heading" : "paragraph").paragraphSize || 12}pt`
+                }
                 onChange={(e) =>
                   editor.chain().focus().setFontSize(e.target.value).run()
                 }
@@ -515,40 +660,26 @@ export default function WriteEditor({
                   try {
                     let html = "";
                     if (f.name.toLowerCase().endsWith(".docx")) {
-                      const mammoth = await import("mammoth");
-                      const result = await mammoth.convertToHtml({
-                        arrayBuffer: await f.arrayBuffer(),
-                      });
-                      html = result.value;
+                      const { importWriteDocx } = await import(
+                        "@/lib/write-docx-import"
+                      );
+                      const result = await importWriteDocx(
+                        await f.arrayBuffer(),
+                      );
+                      html = result.html;
                     } else if (f.name.toLowerCase().endsWith(".txt")) {
                       const el = document.createElement("div");
                       el.textContent = await f.text();
                       html =
                         "<p>" + el.innerHTML.replace(/\n/g, "</p><p>") + "</p>";
                     } else html = await f.text();
-                    const { default: DOMPurify } = await import("dompurify");
-                    const clean = DOMPurify.sanitize(html, {
-                      FORBID_TAGS: ["style", "script", "iframe"],
-                      FORBID_ATTR: ["srcset"],
-                    });
-                    const parsed = new DOMParser().parseFromString(
-                      clean,
-                      "text/html",
-                    );
-                    parsed.querySelectorAll("img").forEach((img) => {
-                      if (
-                        !/^data:image\/(png|jpeg|gif|webp);base64,/i.test(
-                          img.src,
-                        )
-                      )
-                        img.remove();
-                    });
+                    const clean = sanitizeWriteHtml(html);
                     if (
                       confirm(
                         "Replace this document’s content with the imported file? Undo remains available. Unsupported Word layout, references and fonts may be lost. Download a backup first.",
                       )
                     )
-                      editor.commands.setContent(parsed.body.innerHTML);
+                      editor.commands.setContent(clean);
                     setError(
                       "Import complete. Review formatting: unsupported Word features may be omitted.",
                     );
@@ -562,344 +693,22 @@ export default function WriteEditor({
             </label>
           </div>
         )}
-        {tab === "References" && (
-          <>
-            <div className="toolbar">
-              <label>
-                Template
-                <select
-                  aria-label="Academic template"
-                  defaultValue=""
-                  onChange={(e) => {
-                    if (!e.target.value) return;
-                    if (
-                      confirm(
-                        "Replace content with a blank academic structure? Undo is available.",
-                      )
-                    ) {
-                      editor.commands.setContent({
-                        type: "doc",
-                        attrs: editor.getJSON().attrs,
-                        content: academicTemplates[e.target.value].flatMap(
-                          (text) => [
-                            {
-                              type: "heading",
-                              attrs: { level: 1 },
-                              content: [{ type: "text", text }],
-                            },
-                            { type: "paragraph" },
-                          ],
-                        ),
-                      });
-                    }
-                  }}
-                >
-                  <option value="">Choose blank structure…</option>
-                  {Object.keys(academicTemplates).map((t) => (
-                    <option key={t}>{t}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Citation style
-                <select
-                  value={citationStyle}
-                  onChange={(e) => setCitationStyle(e.target.value)}
-                >
-                  {["APA", "MLA", "Chicago", "Harvard"].map((t) => (
-                    <option key={t}>{t}</option>
-                  ))}
-                </select>
-              </label>
-              {(
-                ["author", "title", "year", "publisher", "doi", "url"] as const
-              ).map((key) => (
-                <label key={key}>
-                  {key}
-                  <input
-                    aria-label={`Source ${key}`}
-                    value={source[key]}
-                    onChange={(e) =>
-                      setSource({ ...source, [key]: e.target.value })
-                    }
-                  />
-                </label>
-              ))}
-              <Button
-                variant="outline"
-                disabled={!source.author || !source.title || !source.year}
-                onClick={() => {
-                  const next = [...sources, source];
-                  setSources(next);
-                  setPage({ sources: next });
-                  editor
-                    .chain()
-                    .focus()
-                    .insertContent({
-                      type: "text",
-                      text: citation(source, citationStyle),
-                    })
-                    .run();
-                }}
-              >
-                Insert citation &amp; save source
-              </Button>
-              <Button
-                variant="outline"
-                disabled={!sources.length}
-                onClick={() =>
-                  editor
-                    .chain()
-                    .focus()
-                    .insertContent([
-                      {
-                        type: "heading",
-                        attrs: { level: 1 },
-                        content: [{ type: "text", text: "References" }],
-                      },
-                      ...sources.map((src) => ({
-                        type: "paragraph",
-                        content: [
-                          {
-                            type: "text",
-                            text: bibliography(src, citationStyle),
-                          },
-                        ],
-                      })),
-                    ])
-                    .run()
-                }
-              >
-                Insert bibliography
-              </Button>
-              <span>
-                Basic author–date formatting; verify institutional style
-                requirements.
-              </span>
-            </div>
-            <div className="toolbar">
-              <span>Document outline</span>
-              {(() => {
-                const headings: { text: string; pos: number }[] = [];
-                editor.state.doc.descendants((n, pos) => {
-                  if (n.type.name === "heading")
-                    headings.push({ text: n.textContent, pos });
-                });
-                return headings.map((h) => (
-                  <Button
-                    variant="ghost"
-                    key={h.pos}
-                    onClick={() =>
-                      editor
-                        .chain()
-                        .focus()
-                        .setTextSelection(h.pos + 1)
-                        .scrollIntoView()
-                        .run()
-                    }
-                  >
-                    {h.text || "Untitled heading"}
-                  </Button>
-                ));
-              })()}
-            </div>
-          </>
-        )}
-        {tab === "Review" && (
-          <>
-            <div className="toolbar">
-              <label>
-                Language
-                <select
-                  aria-label="Document language"
-                  value={page.language}
-                  onChange={(e) => setPage({ language: e.target.value })}
-                >
-                  {Object.entries({
-                    "en-GB": "English (UK)",
-                    "en-US": "English (US)",
-                    hi: "Hindi",
-                    ur: "Urdu",
-                    ar: "Arabic",
-                    fr: "French",
-                    de: "German",
-                  }).map(([v, l]) => (
-                    <option key={v} value={v}>
-                      {l}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <span>
-                Browser spelling: use the browser context menu for corrections
-                and personal dictionary.
-              </span>
-              <label>
-                Find
-                <input
-                  aria-label="Find text"
-                  value={find}
-                  onChange={(e) => setFind(e.target.value)}
-                />
-              </label>
-              <label>
-                Replace
-                <input
-                  aria-label="Replacement text"
-                  value={replacement}
-                  onChange={(e) => setReplacement(e.target.value)}
-                />
-              </label>
-              <Button
-                variant="outline"
-                disabled={!find}
-                onClick={() => {
-                  let match: { from: number; to: number } | undefined;
-                  editor.state.doc.descendants((n, p) => {
-                    const i = n.isText ? n.text!.indexOf(find) : -1;
-                    if (i >= 0 && !match)
-                      match = { from: p + i, to: p + i + find.length };
-                  });
-                  if (match)
-                    editor
-                      .chain()
-                      .focus()
-                      .setTextSelection(match)
-                      .insertContent(replacement)
-                      .run();
-                  else setError("No matching text found.");
-                }}
-              >
-                Replace first
-              </Button>
-            </div>
-            <div className="write-suggestions">
-              <strong>Local writing checks</strong>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={editor.state.doc.attrs.autocorrect === true}
-                  onChange={(e) => setPage({ autocorrect: e.target.checked })}
-                />
-                Autocorrect common English typos and standalone i when typing a
-                space (undoable)
-              </label>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  const name = prompt("Name this version");
-                  if (!name) return;
-                  const snapshot = editor.getJSON();
-                  const { versions: previous, ...attrs } = snapshot.attrs || {};
-                  const versions = Array.isArray(previous) ? previous : [];
-                  setPage({
-                    versions: [
-                      ...versions,
-                      {
-                        name: name.slice(0, 80),
-                        created: new Date().toISOString(),
-                        document: { ...snapshot, attrs },
-                      },
-                    ].slice(-10),
-                  });
-                }}
-              >
-                Save named version
-              </Button>
-              {(Array.isArray(editor.state.doc.attrs.versions)
-                ? editor.state.doc.attrs.versions
-                : []
-              ).map(
-                (
-                  v: { name: string; created: string; document: JSONContent },
-                  i: number,
-                ) => (
-                  <Button
-                    variant="ghost"
-                    key={i}
-                    onClick={() => {
-                      if (
-                        confirm(
-                          `Restore ${v.name}? Current edits can be recovered with Undo.`,
-                        )
-                      ) {
-                        const versions = editor.state.doc.attrs.versions;
-                        editor.commands.setContent({
-                          ...v.document,
-                          attrs: { ...v.document.attrs, versions },
-                        });
-                      }
-                    }}
-                  >
-                    Restore {v.name}
-                  </Button>
-                ),
-              )}
-              <small>
-                Up to 10 named snapshots, saved within this document.
-              </small>
-              <p>
-                Conservative English rules. Suggestions may be wrong; your text
-                stays on this device.
-              </p>
-              {(() => {
-                const items: {
-                  from: number;
-                  to: number;
-                  original: string;
-                  replacement: string;
-                  reason: string;
-                }[] = [];
-                editor.state.doc.descendants((n, pos) => {
-                  if (
-                    ["paragraph", "heading"].includes(n.type.name) &&
-                    !n.marks.some((m) => m.type.name === "code")
-                  ) {
-                    for (const suggestion of writingSuggestions(
-                      n.textContent,
-                      page.language,
-                    )) {
-                      if (!ignored.includes(suggestion.original))
-                        items.push({
-                          ...suggestion,
-                          from: pos + 1 + suggestion.from,
-                          to: pos + 1 + suggestion.to,
-                        });
-                    }
-                  }
-                });
-                return items.slice(0, 15).map((item, i) => (
-                  <div key={`${item.from}-${i}`}>
-                    <span>
-                      {item.reason}: “{item.original}” → “{item.replacement}”
-                    </span>
-                    <Button
-                      variant="ghost"
-                      onClick={() =>
-                        editor
-                          .chain()
-                          .focus()
-                          .insertContentAt(
-                            { from: item.from, to: item.to },
-                            item.replacement,
-                          )
-                          .run()
-                      }
-                    >
-                      Accept
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      onClick={() => setIgnored([...ignored, item.original])}
-                    >
-                      Ignore all
-                    </Button>
-                  </div>
-                ));
-              })()}
-            </div>
-          </>
-        )}
+        <div hidden={tab !== "References"}>
+          <WriteReferences
+            editor={editor}
+            page={page}
+            setPage={setPage}
+            setError={setError}
+          />
+        </div>
+        <div hidden={tab !== "Review"}>
+          <WriteReview
+            editor={editor}
+            page={page}
+            setPage={setPage}
+            setError={setError}
+          />
+        </div>
       </div>
       <div className="toolbar">
         <Button
@@ -1050,10 +859,114 @@ export default function WriteEditor({
           size="icon"
           title="Print"
           aria-label="Print"
-          onClick={() => window.print()}
+          onClick={() =>
+            setPreview({
+              html: editor.getHTML(),
+              page: pageSettings(editor.getJSON()),
+            })
+          }
         >
           <Printer size={17} />
         </Button>
+        {editor.isActive("image") && (
+          <>
+            <label>
+              Image width (px)
+              <input
+                aria-label="Image width"
+                type="number"
+                min="32"
+                max="1000"
+                value={editor.getAttributes("image").width || 400}
+                onChange={(e) => {
+                  const attrs = editor.getAttributes("image");
+                  const width = Math.max(
+                    32,
+                    Math.min(1000, Number(e.target.value)),
+                  );
+                  editor
+                    .chain()
+                    .focus()
+                    .updateAttributes("image", {
+                      width,
+                      height:
+                        attrs.width && attrs.height
+                          ? Math.round((width * attrs.height) / attrs.width)
+                          : null,
+                    })
+                    .run();
+                }}
+              />
+            </label>
+            <Button
+              variant="outline"
+              onClick={() =>
+                editor
+                  .chain()
+                  .focus()
+                  .updateAttributes("image", { alignment: "center" })
+                  .run()
+              }
+            >
+              Centre image
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() =>
+                editor
+                  .chain()
+                  .focus()
+                  .updateAttributes("image", { alignment: "left", wrap: true })
+                  .run()
+              }
+            >
+              Wrap left
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() =>
+                editor
+                  .chain()
+                  .focus()
+                  .updateAttributes("image", { alignment: "right", wrap: true })
+                  .run()
+              }
+            >
+              Wrap right
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() =>
+                editor
+                  .chain()
+                  .focus()
+                  .updateAttributes("image", { wrap: false })
+                  .run()
+              }
+            >
+              Inline layout
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const text = prompt("Image caption");
+                if (text)
+                  editor
+                    .chain()
+                    .focus()
+                    .insertContentAt(editor.state.selection.to, {
+                      type: "paragraph",
+                      content: [
+                        { type: "text", text, marks: [{ type: "italic" }] },
+                      ],
+                    })
+                    .run();
+              }}
+            >
+              Add caption
+            </Button>
+          </>
+        )}
         {editor.isActive("table") && (
           <>
             <Button
@@ -1076,6 +989,50 @@ export default function WriteEditor({
               onClick={() => editor.chain().focus().deleteTable().run()}
             >
               Delete table
+            </Button>
+            <label>
+              Cell shading
+              <input
+                aria-label="Cell shading"
+                type="color"
+                onChange={(e) =>
+                  editor
+                    .chain()
+                    .focus()
+                    .setCellAttribute("backgroundColor", e.target.value)
+                    .run()
+                }
+              />
+            </label>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => editor.chain().focus().deleteRow().run()}
+            >
+              Delete row
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => editor.chain().focus().deleteColumn().run()}
+            >
+              Delete column
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!editor.can().mergeCells()}
+              onClick={() => editor.chain().focus().mergeCells().run()}
+            >
+              Merge cells
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!editor.can().splitCell()}
+              onClick={() => editor.chain().focus().splitCell().run()}
+            >
+              Split cell
             </Button>
           </>
         )}
@@ -1115,12 +1072,27 @@ export default function WriteEditor({
           className="doc-page write-page"
           style={{
             width: `${(pageWidth * 96) / 72}px`,
+            minHeight: `${(pageHeight * 96) / 72}px`,
             padding: `${(page.margin * 96) / 72}px`,
             zoom: zoom / 100,
           }}
         >
           <div className="write-running-header">{page.header}</div>
           <EditorContent editor={editor} lang={page.language} spellCheck />
+          <div className="write-notes">
+            {(() => {
+              const notes: { number: number; text: string }[] = [];
+              editor.state.doc.descendants((n) => {
+                if (n.type.name === "footnote")
+                  notes.push(n.attrs as { number: number; text: string });
+              });
+              return notes.map((n, i) => (
+                <p key={i}>
+                  <sup>{n.number}</sup> {n.text}
+                </p>
+              ));
+            })()}
+          </div>
           <div className="write-running-footer">{page.footer}</div>
         </div>
       </div>

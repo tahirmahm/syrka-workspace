@@ -119,3 +119,7 @@ The only allowed cloud project is **Syrka Workspace**, ref `zguejzlseldovdssiumn
 The current provider accepted a QA registration and its email was found in the connected inbox. The verification URL targeted this project and redirected to the correct production callback, but was already invalid/consumed when exercised; successful fresh-link confirmation is not claimed. Default Supabase SMTP may restrict non-team recipients and rates. Public-recipient delivery still needs verification; do not enable paid SMTP or weaken email verification. Two temporary confirmed QA accounts were used to verify real login, session persistence, logout, autosave and cross-account RLS. Only these QA accounts and their test files were removed afterward. Existing owner-based RLS and the private storage bucket were unchanged.
 
 `AGENTS.md` records the permanent workflow: fetch latest GitHub state, use PRs for substantial work, run required checks, commit/push tested work, and let Vercel deploy `main`. See `DEPLOYMENT.md` for operating and verification steps.
+
+### Syrka Write 2
+
+See [architecture audit](WRITE-2-AUDIT.md) and [release capabilities and limitations](WRITE-2-RELEASE.md). This is a compatible progressive upgrade to the existing Tiptap editor, with no database migration. Print preview runs locally using Paged.js; bundled Noto fonts are licensed under SIL OFL 1.1. No external writing-analysis service is used.
