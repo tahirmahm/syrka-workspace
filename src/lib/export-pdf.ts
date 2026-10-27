@@ -1,3 +1,4 @@
+import { pageSettings, pageDimensions } from "./write-model";
 import type { JSONContent } from "@tiptap/core";
 import type { Content, TDocumentDefinitions } from "pdfmake/interfaces";
 import { imageData, nodeText, rasterAsset } from "./export-document";
@@ -30,9 +31,14 @@ export async function buildDocumentPdf(root: JSONContent, name: string) {
   async function convert(node: JSONContent): Promise<Content> {
     if (node.type === "text") {
       const marks = node.marks || [];
+      const style = marks.find((m) => m.type === "textStyle")?.attrs || {};
       const href = marks.find((m) => m.type === "link")?.attrs?.href;
       return {
         text: node.text || "",
+        fontSize: style.fontSize ? parseFloat(style.fontSize) : undefined,
+        color: style.color || undefined,
+        background:
+          marks.find((m) => m.type === "highlight")?.attrs?.color || undefined,
         bold: marks.some((m) => m.type === "bold"),
         italics: marks.some((m) => m.type === "italic"),
         decoration: marks.some((m) => m.type === "underline")
@@ -43,6 +49,7 @@ export async function buildDocumentPdf(root: JSONContent, name: string) {
         link: /^(https?:|mailto:)/i.test(href || "") ? href : undefined,
       };
     }
+    if (node.type === "pageBreak") return { text: "", pageBreak: "after" };
     if (node.type === "hardBreak") return { text: "\n" };
     if (node.type === "image")
       return {
@@ -98,7 +105,13 @@ export async function buildDocumentPdf(root: JSONContent, name: string) {
         )
           ? node.attrs!.textAlign
           : "left",
-        margin: [0, 0, 0, node.type === "heading" ? 14 : 9],
+        lineHeight: Number(node.attrs?.lineHeight) || 1.5,
+        margin: [
+          Number(node.attrs?.indent) || 0,
+          0,
+          0,
+          Number(node.attrs?.spaceAfter ?? (node.type === "heading" ? 14 : 8)),
+        ],
       };
     }
     if (node.type === "codeBlock")
@@ -121,10 +134,22 @@ export async function buildDocumentPdf(root: JSONContent, name: string) {
     };
   }
   const content = await Promise.all((root.content || []).map(convert));
+  const page = pageSettings(root);
+  const [width, height] = pageDimensions(page);
   return makePdf({
     info: { title: name, author: "Syrka Write" },
-    pageSize: "A4",
-    pageMargins: [44, 44, 44, 44],
+    pageSize: { width, height },
+    pageMargins: [page.margin, page.margin, page.margin, page.margin],
+    header: page.header
+      ? { text: page.header, margin: [page.margin, 18, 0, 0], fontSize: 9 }
+      : undefined,
+    footer: (current, total) => ({
+      text: [page.footer, page.numbers ? `${current} / ${total}` : ""]
+        .filter(Boolean)
+        .join("   "),
+      alignment: "center",
+      fontSize: 9,
+    }),
     content: content.length ? content : [{ text: "" }],
     defaultStyle: { font: "Roboto" },
   });
