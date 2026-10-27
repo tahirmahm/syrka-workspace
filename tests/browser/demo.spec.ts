@@ -1,0 +1,21 @@
+import {test,expect} from '@playwright/test';
+test('demo entry needs no account, persists edits locally, and exits to sign-in',async({page})=>{
+ const cloudWrites:string[]=[];
+ page.on('request',request=>{if(request.url().includes('.supabase.co/rest/v1/')&&request.method()!=='GET')cloudWrites.push(request.url());});
+ await page.goto('/');
+ await page.getByRole('button',{name:'Try demo — no account needed',exact:true}).click();
+ await expect(page.getByText('Demo workspace — files are saved in this browser.',{exact:false})).toBeVisible();
+ for(const name of ['A fresh start','Project budget','The next chapter'])await expect(page.getByRole('button',{name:`Open ${name}`,exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Open A fresh start',exact:true}).click();
+ await page.locator('.tiptap').click();await page.keyboard.press('Control+End');await page.keyboard.type(' Saved in demo without login.');
+ await expect(page.getByText('Saved',{exact:true})).toBeVisible();
+ await page.reload({waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'Open A fresh start',exact:true}).click();
+ await expect(page.locator('.tiptap')).toContainText('Saved in demo without login.');
+ await page.getByRole('button',{name:'Back to files'}).click();
+ await page.getByRole('button',{name:'Exit demo',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Sign in',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Try demo — no account needed',exact:true}).click();
+ await page.getByRole('button',{name:'Open A fresh start',exact:true}).click();
+ await expect(page.locator('.tiptap')).toContainText('Saved in demo without login.');
+ expect(cloudWrites).toEqual([]);
+});

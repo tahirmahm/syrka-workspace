@@ -12,7 +12,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open http://localhost:3000. Without Supabase configuration, a **clearly labeled local demo** stores files and embedded images in this browser's localStorage. Demo data does not upload or migrate automatically. Browser storage limits apply; a quota error is displayed as a save failure.
+Open http://localhost:3000. On the sign-in screen, choose **Try demo — no account needed** to open a browser-local workspace preloaded with Write, Tables, and Present sample files. Demo entry is remembered for the current tab across reloads; **Exit demo** returns to sign-in. Demo files stay in this browser and are separate from authenticated cloud files. Without Supabase configuration, a **clearly labeled local demo** stores files and embedded images in this browser's localStorage. Demo data does not upload or migrate automatically. Browser storage limits apply; a quota error is displayed as a save failure.
 
 ## Supabase setup
 
@@ -51,7 +51,7 @@ npm run build
 npm run test:e2e
 ```
 
-The E2E suite runs local demo flows against a production build. If Supabase is configured, first build the demo with `NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY= npm run build`, then run `npm run test:e2e`. Run `npm run build` again afterward to restore the configured Supabase production build. Chromium is configurable through `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`; otherwise install it using `npx playwright install chromium`. Supabase live auth/storage and RLS require your configured project; unit/browser demo tests do not establish that live policies were applied.
+The E2E suite runs browser-local demo flows against the configured production build, including entry from the live sign-in screen. Chromium is configurable through `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`; otherwise install it using `npx playwright install chromium`. Supabase live auth/storage and RLS require your configured project; unit/browser demo tests do not establish that live policies were applied.
 
 ## MVP boundaries
 
