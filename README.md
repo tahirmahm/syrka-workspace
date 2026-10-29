@@ -123,3 +123,7 @@ The current provider accepted a QA registration and its email was found in the c
 ### Syrka Write 2
 
 See [architecture audit](WRITE-2-AUDIT.md) and [release capabilities and limitations](WRITE-2-RELEASE.md). This is a compatible progressive upgrade to the existing Tiptap editor, with no database migration. Print preview runs locally using Paged.js; bundled Noto fonts are licensed under SIL OFL 1.1. No external writing-analysis service is used.
+
+## Sessions and Notes (feature release)
+
+Sessions and Notes extend Tools with meeting records, permissioned transcripts, reviewed notes, exports and Campus class entry points. Media, AI and speech features require eligible server-side configuration and hosted acceptance tests; they are disabled when configuration is missing. This branch does not claim a verified live communications rollout. See [architecture, provider audit, setup, test gates and limitations](docs/sessions-notes.md). Existing eight local utilities remain local; Sessions and Notes are explicit account-based cloud services.

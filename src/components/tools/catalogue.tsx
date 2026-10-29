@@ -2,12 +2,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Search, ArrowUpRight } from "lucide-react";
-import { tools } from "@/lib/tools/registry";
+import { tools, knowledgeTools } from "@/lib/tools/registry";
 import { ToolPictogram } from "./pictogram";
 export default function Catalogue() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All tools");
-  const shown = tools.filter(
+  const shown = [...tools, ...knowledgeTools].filter(
     (t) =>
       (category === "All tools" || category === t.category) &&
       `${t.name} ${t.description}`.toLowerCase().includes(query.toLowerCase()),
@@ -32,7 +32,7 @@ export default function Catalogue() {
         className="file-filters tool-categories"
         aria-label="Tool categories"
       >
-        {["All tools", "PDF", "Images", "Everyday"].map((c) => (
+        {["All tools", "PDF", "Images", "Everyday", "Meetings"].map((c) => (
           <button
             key={c}
             aria-pressed={c === category}
@@ -69,8 +69,9 @@ export default function Catalogue() {
         </div>
       )}
       <p className="tools-local-note">
-        Free to use. No account needed. Your files are processed in your browser
-        and never uploaded.
+        PDF, image and everyday utilities run locally without an account.
+        Sessions and Notes use private account-based records; media and AI
+        require configured services and consent.
       </p>
     </>
   );
