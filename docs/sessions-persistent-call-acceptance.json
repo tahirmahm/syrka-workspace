@@ -1,0 +1,121 @@
+{
+  "preview": "https://syrka-workspace-dbno85fzz-tahirmahmood439wel-gmailcoms-projects.vercel.app",
+  "commit": "be957e643d0f7df339ac41a270e9111f58013562",
+  "checked_at": "2026-10-30T23:23:34.745Z",
+  "status": "BLOCKED_MEDIA_TRANSPORT",
+  "checks": [
+    "Exact Git Preview SHA and configured LiveKit",
+    "Host copied the canonical invitation",
+    "Guest invitation identifies the host",
+    "Waiting guest has no private meeting content",
+    "Waiting guest cannot mint media token",
+    "Guest cannot invoke host controls",
+    "Authenticated host sees scoped waiting identity",
+    "Host admits the waiting guest through the actual meeting interface",
+    "Admission automatically opens real call without signup",
+    "Guest holds no Supabase Auth session",
+    "Guest snapshot excludes notes/transcripts",
+    "Guest mobile layout fits viewport",
+    "Real-service browser 1 minimizes without replacing its call subtree",
+    "Real-service browser 1 returns without replacing its call subtree",
+    "Real-service browser 2 minimizes without replacing its call subtree",
+    "Real-service browser 2 returns without replacing its call subtree",
+    "Host presentation restriction reaches actual guest JWT while preserving microphone and camera",
+    "Guest can leave without losing scoped admission",
+    "Guest JWT is room-scoped and lasts at most 60 seconds",
+    "Removed guest cannot mint new tokens",
+    "Revoked unexpired JWT rejected by actual LiveKit signaling",
+    "Host can end real meeting",
+    "Ending a meeting does not let an old guest JWT recreate its room"
+  ],
+  "clients": [
+    {
+      "kind": "authenticated_host",
+      "authRequests": 0,
+      "signalingFrames": 66,
+      "iceErrors": [
+        701
+      ],
+      "inboundPackets": 0,
+      "outboundPackets": 0
+    },
+    {
+      "kind": "account_free_guest",
+      "authRequests": 0,
+      "signalingFrames": 52,
+      "iceErrors": [
+        701
+      ],
+      "inboundPackets": 0,
+      "outboundPackets": 0
+    }
+  ],
+  "tokenBaseline": {
+    "joined": true,
+    "frames": 9,
+    "status": "frames",
+    "handshakeStatus": 101
+  },
+  "replayAfterRemoval": {
+    "joined": false,
+    "frames": 0,
+    "status": "rejected",
+    "handshakeStatus": 401
+  },
+  "replayAfterEnd": {
+    "joined": false,
+    "frames": 0,
+    "status": "rejected",
+    "handshakeStatus": 401
+  },
+  "cleanup": "Own QA room removed",
+  "qwen": {
+    "source": "358a8efd6e7c902597e065b7dcb02bf9f2d45560",
+    "status": "PASS_AUDIO_NOTES_AND_SECURITY",
+    "checks": [
+      "Preview SHA matches the requested Git commit",
+      "User B cannot read user A private meeting",
+      "Authenticated transcript import persists",
+      "Manually authored Notes save and reopen without AI",
+      "User B cannot overwrite user A Notes",
+      "QA-only session cleanup succeeds",
+      "Preview has real AI, speech and development media capability",
+      "Real audio uploaded to private storage",
+      "Actual qwen3-asr-flash-filetrans response saved sentence timestamps",
+      "Uploaded speaker identities remain unverified",
+      "Real speech content recognized",
+      "Actual Qwen structured notes persisted",
+      "Saved real notes appear in the Workspace Notes interface",
+      "No live recognition before all participants consent",
+      "Actual qwen3-asr-flash-realtime result persisted with own-track attribution",
+      "Actual Qwen structured notes persisted",
+      "Consent revocation blocks subsequent live speech processing"
+    ]
+  },
+  "physical_devices_manually_verified": false,
+  "private_audio": {
+    "status": "PASS",
+    "checks": [
+      "Owner can upload private audio",
+      "Owner can read original private audio",
+      "Other authenticated user cannot download private audio",
+      "Private QA audio fixture removed"
+    ],
+    "checked_at": "2026-10-30T23:21:45.838Z"
+  },
+  "automated_local": {
+    "lint": "PASS",
+    "typecheck": "PASS",
+    "unit_database_tests": 56,
+    "browser_regressions": 56,
+    "production_build": "PASS",
+    "native_websocket_build_smoke": "PASS",
+    "note": "After the speech-language menu fix, targeted call browser tests were repeated successfully; device/media acceptance is separate."
+  },
+  "manual_verification": {
+    "physical_devices": false,
+    "native_pip_outside_tab": false,
+    "two_way_media_during_navigation": false,
+    "shared_screen_audio": false
+  }
+}

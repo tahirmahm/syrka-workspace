@@ -94,3 +94,20 @@ Tables, Present and Notes → return without reconnecting → native PiP where a
 share a browser tab with audio as guest → verify presenter identity/video/audio at host
 → disable guest screen permission → leave/rejoin → end/remove and confirm disconnection.
 No production merge, DNS change, replacement project or paid fallback is authorized.
+
+## Actual hosted acceptance
+
+[Sanitized service evidence](sessions-persistent-call-acceptance.json) records the
+Git-linked `be957e643d0f7df339ac41a270e9111f58013562` Preview. Both independent
+real-service browser contexts (normal host and account-free mobile guest) minimized
+and restored the identical call subtree. No guest Auth request or session was used.
+Host screen-source restriction produced a guest JWT permitting only camera/mic.
+Actual LiveKit signaling accepted a token before removal and returned HTTP 401 for
+the same still-unexpired token after removal and again after meeting termination.
+Own QA rooms and assets were cleaned up.
+
+Actual Qwen uploaded/realtime ASR, structured saved/reopened notes, consent revocation
+and private-audio isolation passed on the unchanged adapters in source `358a8ef`.
+Neither browser received RTP in the current runner; both emitted ICE 701. No claim
+is made for continuing audible media during navigation, real shared audio delivery,
+native PiP outside the tab or physical iOS/Android behavior. Those gates remain open.

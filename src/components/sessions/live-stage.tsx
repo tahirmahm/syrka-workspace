@@ -654,7 +654,7 @@ function CallCanvas({
           </aside>
         )}
       </div>
-      {sharingFeedback && (
+      {sharingFeedback && isScreenShareEnabled && (
         <p className="call-share-feedback" role="status">
           {sharingFeedback}
         </p>
