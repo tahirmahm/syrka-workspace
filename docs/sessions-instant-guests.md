@@ -162,4 +162,53 @@ private operator evidence to `/tmp/syrka-scoped-guest-preview-acceptance.json`.
 Calling is independent of Qwen availability and consent. Guest speech requires
 explicit consent from every admitted participant and a second server-side consent
 check when persisting each result. Guests cannot retrieve private notes/transcripts.
-No paid fallback has been enabled. Hosted results will be recorded after deployment.
+No paid fallback has been enabled.
+
+## Current hosted result — 30 October 2026
+
+Application source `c6bae1e8178f3347a81cde49f13cbbcbc6e7a86a` is Git-deployed
+and tested. [Sanitized evidence](sessions-scoped-guests-acceptance.json).
+
+**PASS:** a normally authenticated host copies the real invitation; a fresh mobile
+browser enters a name, previews devices, asks to join, and is admitted through the
+actual host interface. It automatically mounts the LiveKit client without any
+Supabase Auth request or Auth session. Leaving/rejoining retains only its own
+meeting-scoped admission. Pending and removed guests cannot mint grants; guests
+cannot invoke host operations or read notes/transcripts. The 375px viewport has no
+horizontal overflow. A bare Preview request serves the actual app without a Vercel
+login; the normal authenticated Sessions API still returns JSON 401 when unsigned.
+
+**PASS:** an actual issued guest JWT first receives LiveKit HTTP 101 and a decoded
+JoinResponse. The exact same unexpired JWT receives HTTP 401 after host removal,
+and still receives HTTP 401 after end-for-everyone deletes the media room. New
+grants are denied after removal. Cloud rejected the initial future revocation
+cutoff outside its 60-second window; the implementation now uses +30 seconds,
+verified against the actual Cloud service.
+
+**PASS:** consented guest PCM is transcribed through the existing Qwen realtime
+adapter, with timestamps and `guest_speaker_id`, then Qwen generates notes that save
+and reopen. The guest cannot retrieve those notes or its transcript. Revocation
+blocks the next audio batch before provider processing. Uploaded-file ASR,
+authenticated realtime ASR, structured notes, private Storage and account isolation
+also passed on the unchanged provider code. Fictional test audio is used; these API
+checks do not prove live microphone capture or a full call-to-notes workflow.
+
+**NOT PASSED:** default and forced-relay browser attempts receive real signaling
+but no inbound/outbound RTP or remote decoded media; ICE 701 remains reproducible.
+This managed runner has an HTTP proxy but no general TCP grants/VPN. This identifies
+an environment limitation, not verified behavior on an ordinary Android network.
+Two-way calling, connected device/screen-share controls, network recovery and
+physical microphone/camera/speaker playback remain acceptance gates. Both draft
+PRs remain unmerged. No production or Campus deployment/configuration was changed.
+
+For an independent account-free test, open the Git Preview in two browsers: host
+signs into Syrka and chooses Start call, sends the copied link over WhatsApp, guest
+opens it without Syrka cookies, enters a name and asks to join. Host opens the
+transcript/notes/host panel and admits the request. Enable mic/camera on both devices,
+verify audible speech and moving remote video in both directions, leave/rejoin, and
+end for everyone. Record results before production acceptance.
+
+Set `SYRKA_QA_GUEST_AUDIO=true` to include real guest speech/notes tests in the hosted
+probe. `SYRKA_QA_PUBLIC_GUEST=true` omits all platform access headers from the fresh
+guest context. `SYRKA_QA_SECURITY_ONLY=true` explicitly skips media waiting, verifies
+actual Cloud token replay independently, and never reports media acceptance.

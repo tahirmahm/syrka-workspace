@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { chromium, request } from "@playwright/test";
 import { SignalResponse } from "@livekit/protocol";
+import WebSocket from "ws";
+import proxyAgent from "next/dist/compiled/https-proxy-agent/index.js";
 const target = process.env.SYRKA_PREVIEW_URL,
   sha = process.env.SYRKA_EXPECTED_SHA;
 if (!target || !sha || !new URL(target).hostname.endsWith(".vercel.app"))
@@ -28,6 +30,8 @@ const origin = new URL(target).origin;
 const headers = {
   "x-vercel-trusted-oidc-idp-token": process.env.VERCEL_OIDC_TOKEN,
 };
+const guestHeaders =
+  process.env.SYRKA_QA_PUBLIC_GUEST === "true" ? {} : headers;
 const host = await request.newContext({
   baseURL: target,
   proxy,
@@ -68,12 +72,12 @@ async function guestApi(data, id = roomId) {
         .context()
         .request.post(target + "/workspace/api/sessions/guest", {
           data,
-          headers,
+          headers: guestHeaders,
         })
     : await pages[1]
         .context()
         .request.get(target + "/workspace/api/sessions/guest?id=" + id, {
-          headers,
+          headers: guestHeaders,
         });
   return { response: r, body: await r.json() };
 }
@@ -158,57 +162,62 @@ async function snapshot(page) {
     };
   });
 }
-async function signaling(page, url, token) {
-  let joined = false,
-    frames = 0,
-    reason;
-  const listen = (socket) => {
-    if (!socket.url().startsWith(url.replace(/\/$/, ""))) return;
-    socket.on("framereceived", (frame) => {
-      frames++;
+async function signaling(_page, url, token) {
+  const u = new URL(url);
+  u.pathname = "/rtc";
+  for (const [k, v] of Object.entries({
+    access_token: token,
+    sdk: "js",
+    version: "2.23.0",
+    protocol: "16",
+    auto_subscribe: "0",
+  }))
+    u.searchParams.set(k, v);
+  return new Promise((resolve) => {
+    const state = {
+      joined: false,
+      frames: 0,
+      status: "timeout",
+      handshakeStatus: undefined,
+    };
+    const socket = new WebSocket(
+      u,
+      proxy ? { agent: new proxyAgent.HttpsProxyAgent(proxy.server) } : {},
+    );
+    let complete = false;
+    const done = (status) => {
+      if (complete) return;
+      complete = true;
+      clearTimeout(timer);
+      state.status = status;
+      socket.close();
+      resolve(state);
+    };
+    const timer = setTimeout(
+      () => done(state.frames ? "frames" : "timeout"),
+      6000,
+    );
+    socket.on("upgrade", (response) => {
+      state.handshakeStatus = response.statusCode;
+    });
+    socket.on("unexpected-response", (req, response) => {
+      state.handshakeStatus = response.statusCode;
+      response.resume();
+      req.destroy();
+      done("rejected");
+    });
+    socket.on("message", (data) => {
+      state.frames++;
       try {
-        const msg = SignalResponse.fromBinary(new Uint8Array(frame.payload));
-        if (msg.message.case === "join") joined = true;
-        if (msg.message.case === "leave")
-          reason = String(msg.message.value.reason);
+        const msg = SignalResponse.fromBinary(new Uint8Array(data));
+        if (msg.message.case === "join") state.joined = true;
       } catch {}
     });
-  };
-  page.on("websocket", listen);
-  const status = await page.evaluate(
-    async ({ url, token }) => {
-      const u = new URL(url);
-      u.pathname = "/rtc";
-      for (const [k, v] of Object.entries({
-        access_token: token,
-        sdk: "js",
-        version: "2.23.0",
-        protocol: "16",
-        auto_subscribe: "0",
-      }))
-        u.searchParams.set(k, v);
-      return new Promise((resolve) => {
-        const ws = new WebSocket(u);
-        ws.binaryType = "arraybuffer";
-        let seen = false;
-        const done = (value) => {
-          clearTimeout(timer);
-          ws.close();
-          resolve(value);
-        };
-        const timer = setTimeout(() => done(seen ? "frames" : "timeout"), 6000);
-        ws.onmessage = () => {
-          seen = true;
-        };
-        ws.onerror = () => done("rejected");
-        ws.onclose = () => done(seen ? "frames" : "closed");
-      });
-    },
-    { url, token },
-  );
-  page.off("websocket", listen);
-  return { joined, frames, status, reason };
+    socket.on("error", () => done("network_error"));
+    socket.on("close", () => done(state.frames ? "frames" : "closed"));
+  });
 }
+
 try {
   const root = await hostApi();
   check(
@@ -252,9 +261,12 @@ try {
         "clipboard-write",
       ],
     });
-    await context.route(origin + "/**", (route) =>
-      route.continue({ headers: { ...route.request().headers(), ...headers } }),
-    );
+    if (i === 0 || process.env.SYRKA_QA_PUBLIC_GUEST !== "true")
+      await context.route(origin + "/**", (route) =>
+        route.continue({
+          headers: { ...route.request().headers(), ...headers },
+        }),
+      );
     await context.addInitScript(
       ({ origin, session, relay }) => {
         if (location.origin !== origin) return;
@@ -378,7 +390,18 @@ try {
     "Authenticated host sees scoped waiting identity",
     member?.guest_identity && member.status === "waiting",
   );
-  await manage({ status: "approved", can_publish: true });
+  await pages[0]
+    .getByRole("button", { name: "Toggle transcript and notes", exact: true })
+    .click();
+  await pages[0]
+    .locator(".session-member")
+    .filter({ hasText: "QA account-free visitor" })
+    .getByRole("button", { name: "Admit", exact: true })
+    .click();
+  check(
+    "Host admits the waiting guest through the actual meeting interface",
+    true,
+  );
   await pages[1]
     .getByRole("toolbar", { name: "Meeting controls" })
     .waitFor({ timeout: 20000 });
@@ -407,7 +430,9 @@ try {
   );
   const connected = await Promise.allSettled(
     pages.map((p) =>
-      p.locator('[data-call-state="connected"]').waitFor({ timeout: 40000 }),
+      p.locator('[data-call-state="connected"]').waitFor({
+        timeout: process.env.SYRKA_QA_SECURITY_ONLY === "true" ? 1 : 40000,
+      }),
     ),
   );
   if (connected.every((r) => r.status === "fulfilled")) {
@@ -449,9 +474,12 @@ try {
     for (let i = 0; i < 2; i++)
       result.clients[i].transport = await snapshot(pages[i]);
   }
-  result.media_status = result.media_verified
-    ? "PASS_ACTUAL_LIVEKIT_RTP"
-    : "BLOCKED_MEDIA_TRANSPORT";
+  result.media_status =
+    process.env.SYRKA_QA_SECURITY_ONLY === "true"
+      ? "NOT_TESTED_SECURITY_ONLY"
+      : result.media_verified
+        ? "PASS_ACTUAL_LIVEKIT_RTP"
+        : "BLOCKED_MEDIA_TRANSPORT";
   for (let i = 0; i < 2; i++) {
     await pages[i].screenshot({
       path: `/tmp/syrka-scoped-guest-${i ? "mobile" : "desktop"}.png`,
@@ -494,7 +522,7 @@ try {
       pages[1]
         .context()
         .request.post(target + "/workspace/api/sessions/guest", {
-          headers,
+          headers: guestHeaders,
           multipart: data,
           timeout: 90000,
         });
@@ -548,7 +576,7 @@ try {
       kind: "notes",
       request_id: randomUUID(),
     });
-    let noteId;
+    let noteReady = false;
     for (let n = 0; n < 36; n++) {
       await new Promise((r) => setTimeout(r, 2500));
       const saved = await hostApi(null, roomId);
@@ -562,11 +590,11 @@ try {
           "Actual Qwen notes from guest transcript save and reopen",
           !!saved.note?.body.overview?.length,
         );
-        noteId = saved.note.id;
+        noteReady = true;
         break;
       }
     }
-    assert(noteId, "Guest notes exceeded acceptance deadline");
+    assert(noteReady, "Guest notes exceeded acceptance deadline");
     const privateSnap = await guestApi();
     check(
       "Guest cannot read host notes or guest transcript",
@@ -607,7 +635,7 @@ try {
     "Revoked unexpired JWT rejected by actual LiveKit signaling",
     before.joined &&
       !after.joined &&
-      after.status !== "timeout" &&
+      [401, 403].includes(after.handshakeStatus) &&
       claims.exp > Date.now() / 1000,
   );
   await hostApi({ action: "host_update", roomId, patch: { status: "ended" } });
@@ -624,13 +652,17 @@ try {
     "Ending a meeting does not let an old guest JWT recreate its room",
     before.joined &&
       !result.token_replay_after_end.joined &&
-      result.token_replay_after_end.status !== "timeout" &&
+      [401, 403].includes(result.token_replay_after_end.handshakeStatus) &&
       claims.exp > Date.now() / 1000,
   );
-  result.status = result.media_verified
-    ? "PASS_ACCOUNT_FREE_MEDIA"
-    : "BLOCKED_MEDIA_TRANSPORT";
-  if (!result.media_verified) process.exitCode = 2;
+  result.status =
+    process.env.SYRKA_QA_SECURITY_ONLY === "true"
+      ? "PASS_GUEST_SECURITY_ONLY"
+      : result.media_verified
+        ? "PASS_ACCOUNT_FREE_MEDIA"
+        : "BLOCKED_MEDIA_TRANSPORT";
+  if (!result.media_verified && process.env.SYRKA_QA_SECURITY_ONLY !== "true")
+    process.exitCode = 2;
 } catch (error) {
   result.status = "FAILED";
   result.error = String(error.message)

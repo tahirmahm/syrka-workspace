@@ -1,0 +1,505 @@
+{
+  "application_source_sha": "c6bae1e8178f3347a81cde49f13cbbcbc6e7a86a",
+  "preview": "https://syrka-workspace-mzbhcire5-tahirmahmood439wel-gmailcoms-projects.vercel.app",
+  "checked_at_utc": "2026-10-30T19:32:34.116Z",
+  "guest_admission_and_security": {
+    "status": "PASS_GUEST_SECURITY_ONLY",
+    "checks": [
+      "Exact Git Preview SHA and configured LiveKit",
+      "Host copied the canonical invitation",
+      "Guest invitation identifies the host",
+      "Waiting guest has no private meeting content",
+      "Waiting guest cannot mint media token",
+      "Guest cannot invoke host controls",
+      "Authenticated host sees scoped waiting identity",
+      "Host admits the waiting guest through the actual meeting interface",
+      "Admission automatically opens real call without signup",
+      "Guest holds no Supabase Auth session",
+      "Guest snapshot excludes notes/transcripts",
+      "Guest mobile layout fits viewport",
+      "Guest can leave without losing scoped admission",
+      "Guest JWT is room-scoped and lasts at most 60 seconds",
+      "Removed guest cannot mint new tokens",
+      "Revoked unexpired JWT rejected by actual LiveKit signaling",
+      "Host can end real meeting",
+      "Ending a meeting does not let an old guest JWT recreate its room"
+    ],
+    "guest_auth_requests": 0,
+    "token_baseline": {
+      "joined": true,
+      "frames": 9,
+      "status": "frames",
+      "handshakeStatus": 101
+    },
+    "token_replay_after_removal": {
+      "joined": false,
+      "frames": 0,
+      "status": "rejected",
+      "handshakeStatus": 401
+    },
+    "token_replay_after_end": {
+      "joined": false,
+      "frames": 0,
+      "status": "rejected",
+      "handshakeStatus": 401
+    },
+    "cleanup": "Own QA room removed"
+  },
+  "guest_qwen": {
+    "status": "PASS_SELECTED_REAL_PROVIDER_CHECKS",
+    "checks": [
+      "Guest audio is blocked before explicit guest consent",
+      "Guest can explicitly consent",
+      "Actual Qwen guest speech saved with timestamps and scoped attribution",
+      "Actual Qwen notes from guest transcript save and reopen",
+      "Guest cannot read host notes or guest transcript",
+      "Guest consent revocation blocks new provider audio"
+    ],
+    "note": "Actual fictional PCM via Qwen realtime API and saved structured notes. Separate from live-call media; an initial harness assertion incorrectly expected a note.id instead of the existing room-keyed note record and was fixed."
+  },
+  "normal_qwen_regression": {
+    "source_sha": "ec80bae7a351bd43ccfadd24684e46b96eb1f90e",
+    "status": "PASS_AUDIO_NOTES_AND_SECURITY",
+    "checks": [
+      "Preview SHA matches the requested Git commit",
+      "User B cannot read user A private meeting",
+      "Authenticated transcript import persists",
+      "Manually authored Notes save and reopen without AI",
+      "User B cannot overwrite user A Notes",
+      "QA-only session cleanup succeeds",
+      "Preview has real AI, speech and development media capability",
+      "Real audio uploaded to private storage",
+      "Actual qwen3-asr-flash-filetrans response saved sentence timestamps",
+      "Uploaded speaker identities remain unverified",
+      "Real speech content recognized",
+      "Actual Qwen structured notes persisted",
+      "Saved real notes appear in the Workspace Notes interface",
+      "No live recognition before all participants consent",
+      "Actual qwen3-asr-flash-realtime result persisted with own-track attribution",
+      "Actual Qwen structured notes persisted",
+      "Consent revocation blocks subsequent live speech processing"
+    ]
+  },
+  "media": {
+    "status": "BLOCKED_MEDIA_TRANSPORT",
+    "default": [
+      {
+        "observedCandidates": [],
+        "iceErrors": [
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          }
+        ],
+        "callState": "connecting",
+        "pcs": [
+          {
+            "connection": "closed",
+            "ice": "closed",
+            "gathering": "complete",
+            "icePolicy": "all",
+            "iceServerSchemes": [
+              "turn",
+              "turns"
+            ],
+            "inbound": [],
+            "outbound": [],
+            "candidates": []
+          },
+          {
+            "connection": "closed",
+            "ice": "closed",
+            "gathering": "complete",
+            "icePolicy": "all",
+            "iceServerSchemes": [
+              "turn",
+              "turns"
+            ],
+            "inbound": [],
+            "outbound": [],
+            "candidates": []
+          },
+          {
+            "connection": "closed",
+            "ice": "closed",
+            "gathering": "complete",
+            "icePolicy": "all",
+            "iceServerSchemes": [
+              "turn",
+              "turns"
+            ],
+            "inbound": [],
+            "outbound": [],
+            "candidates": []
+          }
+        ],
+        "audioPlayback": [],
+        "renderedVideos": []
+      },
+      {
+        "observedCandidates": [],
+        "iceErrors": [
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          }
+        ],
+        "callState": "connecting",
+        "pcs": [
+          {
+            "connection": "closed",
+            "ice": "closed",
+            "gathering": "complete",
+            "icePolicy": "all",
+            "iceServerSchemes": [
+              "turn",
+              "turns"
+            ],
+            "inbound": [],
+            "outbound": [],
+            "candidates": []
+          },
+          {
+            "connection": "closed",
+            "ice": "closed",
+            "gathering": "complete",
+            "icePolicy": "all",
+            "iceServerSchemes": [
+              "turn",
+              "turns"
+            ],
+            "inbound": [],
+            "outbound": [],
+            "candidates": []
+          },
+          {
+            "connection": "connecting",
+            "ice": "checking",
+            "gathering": "complete",
+            "icePolicy": "all",
+            "iceServerSchemes": [
+              "turn",
+              "turns"
+            ],
+            "inbound": [],
+            "outbound": [],
+            "candidates": [
+              {
+                "type": "local-candidate",
+                "candidateType": "host",
+                "protocol": "tcp"
+              },
+              {
+                "type": "local-candidate",
+                "candidateType": "host",
+                "protocol": "tcp"
+              },
+              {
+                "type": "remote-candidate",
+                "candidateType": "host",
+                "protocol": "tcp"
+              }
+            ]
+          }
+        ],
+        "audioPlayback": [],
+        "renderedVideos": []
+      }
+    ],
+    "relay": [
+      {
+        "observedCandidates": [],
+        "iceErrors": [
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          }
+        ],
+        "callState": "connecting",
+        "pcs": [
+          {
+            "connection": "closed",
+            "ice": "closed",
+            "gathering": "complete",
+            "icePolicy": "relay",
+            "iceServerSchemes": [
+              "turn",
+              "turns"
+            ],
+            "inbound": [],
+            "outbound": [],
+            "candidates": []
+          },
+          {
+            "connection": "closed",
+            "ice": "closed",
+            "gathering": "complete",
+            "icePolicy": "relay",
+            "iceServerSchemes": [
+              "turn",
+              "turns"
+            ],
+            "inbound": [],
+            "outbound": [],
+            "candidates": []
+          },
+          {
+            "connection": "closed",
+            "ice": "closed",
+            "gathering": "complete",
+            "icePolicy": "relay",
+            "iceServerSchemes": [
+              "turn",
+              "turns"
+            ],
+            "inbound": [],
+            "outbound": [],
+            "candidates": []
+          }
+        ],
+        "audioPlayback": [],
+        "renderedVideos": []
+      },
+      {
+        "observedCandidates": [],
+        "iceErrors": [
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          }
+        ],
+        "callState": "connecting",
+        "pcs": [
+          {
+            "connection": "closed",
+            "ice": "closed",
+            "gathering": "complete",
+            "icePolicy": "relay",
+            "iceServerSchemes": [
+              "turn",
+              "turns"
+            ],
+            "inbound": [],
+            "outbound": [],
+            "candidates": []
+          },
+          {
+            "connection": "closed",
+            "ice": "closed",
+            "gathering": "complete",
+            "icePolicy": "relay",
+            "iceServerSchemes": [
+              "turn",
+              "turns"
+            ],
+            "inbound": [],
+            "outbound": [],
+            "candidates": []
+          },
+          {
+            "connection": "new",
+            "ice": "new",
+            "gathering": "complete",
+            "icePolicy": "relay",
+            "iceServerSchemes": [
+              "turn",
+              "turns"
+            ],
+            "inbound": [],
+            "outbound": [],
+            "candidates": []
+          }
+        ],
+        "audioPlayback": [],
+        "renderedVideos": []
+      }
+    ],
+    "note": "Actual LiveKit SDK in separate host and fresh mobile guest contexts. No RTP, remote decoded video or audio playback; ICE 701 observed. Signaling is not media proof. Runner HTTP proxy unrestricted, general TCP grants empty, VPN not configured."
+  },
+  "physical_devices_manually_verified": false,
+  "unverified": [
+    "Two-way live audio/video",
+    "Connected mute/camera/screen-share delivery",
+    "Remote host mute/removal during established RTP",
+    "Post-connect network recovery",
+    "Physical Android Chrome microphone/camera/speaker playback"
+  ],
+  "production_merged": false,
+  "paid_fallback_enabled": false
+}
