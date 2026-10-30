@@ -11,6 +11,7 @@ import {
   Leaf,
   ChevronRight,
   ShieldCheck,
+  Video,
 } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { Button } from "@/components/ui/button";
@@ -19,10 +20,12 @@ export function ToolsShell({
   children,
   title,
   cloudData = false,
+  application = "tools",
 }: {
   children: React.ReactNode;
   title?: string;
   cloudData?: boolean;
+  application?: "tools" | "sessions";
 }) {
   return (
     <div className="office">
@@ -70,12 +73,27 @@ export function ToolsShell({
             {name}
           </Link>
         ))}
-        <Link href="/tools" className="nav active" aria-current="page">
+        <Link
+          href="/sessions"
+          className={application === "sessions" ? "nav active" : "nav"}
+          aria-label="Sessions"
+          title="Syrka Sessions"
+          aria-current={application === "sessions" ? "page" : undefined}
+        >
+          <Video size={18} color="#5276a2" aria-hidden="true" />
+          Sessions
+          {application === "sessions" && <span className="nav-dot" />}
+        </Link>
+        <Link
+          href="/tools"
+          className={application === "tools" ? "nav active" : "nav"}
+          aria-current={application === "tools" ? "page" : undefined}
+        >
           <span style={{ color: "#8b78a0" }}>
             <ToolPictogram name="tools" size={18} />
           </span>
           Tools
-          <span className="nav-dot" />
+          {application === "tools" && <span className="nav-dot" />}
         </Link>
         <div className="sidebar-bottom">
           <div className="workspace-note">
@@ -94,8 +112,10 @@ export function ToolsShell({
           <span className="breadcrumb">
             Workspace
             <ChevronRight size={14} />
-            <Link href="/tools">Tools</Link>
-            {title && (
+            <Link href={application === "sessions" ? "/sessions" : "/tools"}>
+              {application === "sessions" ? "Sessions" : "Tools"}
+            </Link>
+            {title && !(application === "sessions" && title === "Sessions") && (
               <>
                 <ChevronRight size={14} />
                 <strong>{title}</strong>

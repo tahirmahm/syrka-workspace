@@ -262,7 +262,7 @@ export function nextReview(
   };
 }
 export function meetingLink(source: SessionSource, id: string) {
-  return `/workspace/tools/sessions/meeting/${id}${source === "campus" ? "?source=campus" : ""}`;
+  return `/workspace/sessions/meeting/${id}${source === "campus" ? "?source=campus" : ""}`;
 }
 
 export type SearchHit = {

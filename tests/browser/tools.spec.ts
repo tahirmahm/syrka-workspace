@@ -43,7 +43,7 @@ test("public catalogue, search, categories and mobile navigation", async ({
   await expect(
     page.getByRole("heading", { name: "Tools for everyday work." }),
   ).toBeVisible();
-  await expect(page.locator(".tool-card")).toHaveCount(10);
+  await expect(page.locator(".tool-card")).toHaveCount(9);
   await page.getByLabel("Search tools").fill("merge");
   await expect(page.locator(".tool-card")).toHaveCount(1);
   await page.getByLabel("Search tools").fill("");

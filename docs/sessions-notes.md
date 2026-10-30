@@ -67,7 +67,7 @@ The existing five Qwen variables were initially Production-only. Their scopes we
 
 Workspace uses `zguejzlseldovdssiumn`; Campus uses `pftbpimhyophitfuzcxn`. They never share Auth identities. Workspace verifies its bearer token with Auth; Campus verifies its own `/cam` cookies and active DB memberships/faculty assignments/enrollment. The canonical same-origin UI at www.syrka.co calls the appropriate app's API. No service-role credential is used for normal requests.
 
-Routes: `/workspace/tools/sessions`, `/workspace/tools/notes`, `/workspace/tools/sessions/meeting/[id]`; Campus course Sessions section and `/cam/lecture-notes` with automatic instructor-published notes on the student dashboard.
+Routes: `/workspace/sessions`, `/workspace/tools/notes`, `/workspace/sessions/meeting/[id]` (old `/workspace/tools/sessions/:path*` links redirect, preserving queries); Campus course Sessions section and `/cam/lecture-notes` with automatic instructor-published notes on the student dashboard.
 
 Migrations are additive. RLS protects rooms, admission, immutable transcript originals/revisions, publication, jobs, personal cards and annotations. Draft notes are host-only; enrolled Campus students see published materials according to course access. Revoked enrollment/faculty membership removes access. Live STT requires consent from every approved participant before processing and again before insertion. Attribution is to the authenticated local microphone owner, not speaker identity inference; speech played into that microphone can still be another person's voice.
 

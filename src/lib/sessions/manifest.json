@@ -2,7 +2,7 @@
   "protocol": 1,
   "source": "tahirmahm/syrka-workspace",
   "files": {
-    "model.ts": "4433624555337ee09b24c4b356dcd381ff7d835e2e041ac9d3e6c11875f28078",
+    "model.ts": "ffbe802c36ce3ad084567e61a47e7461f60590b4ade473c829b2dfb7a8a00db8",
     "providers.ts": "5744d941be1047fbeaae79efbbac1798ddbc7d4f22f380955f56e54aa622f62d",
     "server.ts": "ad7f7ccdb666392ce773567e3d9c5714da8f62fd7be9b3d1ede41e0d07ae8ff7",
     "transcripts.ts": "43a1a2466eec6180742346abc430142e5ebd1c2ee2e50f3e5c55a332a22b5047",

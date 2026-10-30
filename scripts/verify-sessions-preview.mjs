@@ -268,7 +268,7 @@ try {
     );
     const page = await context.newPage();
     await page.goto(
-      target + "/workspace/tools/sessions/meeting/" + room + "?view=notes",
+      target + "/workspace/sessions/meeting/" + room + "?view=notes",
     );
     await page
       .getByRole("heading", { name: "Overview", exact: true })

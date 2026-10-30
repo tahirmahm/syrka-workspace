@@ -323,7 +323,7 @@ try {
       if (!network.hosts.includes(host)) network.hosts.push(host);
       socket.on("framereceived", () => network.receivedFrames++);
     });
-    await page.goto(`${target}/workspace/tools/sessions/meeting/${id}`);
+    await page.goto(`${target}/workspace/sessions/meeting/${id}`);
     await page
       .getByRole("heading", { name: "QA LiveKit two authenticated browsers" })
       .waitFor({ timeout: 30000 });
@@ -360,7 +360,7 @@ try {
   );
   check(
     "Copied invitation is the actual authorized meeting URL",
-    invitation === `${target}/workspace/tools/sessions/meeting/${id}`,
+    invitation === `${target}/workspace/sessions/meeting/${id}`,
   );
   const connected = await Promise.allSettled(
     pages.map((p) =>

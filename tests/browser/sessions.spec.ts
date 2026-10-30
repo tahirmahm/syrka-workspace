@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import JSZip from "jszip";
 import { PDFDocument } from "pdf-lib";
 test.beforeEach(async ({ page }) => {
-  await page.goto("/workspace/tools/sessions");
+  await page.goto("/workspace/sessions");
   await page.evaluate(() =>
     sessionStorage.setItem("syrka-workspace-demo", "true"),
   );

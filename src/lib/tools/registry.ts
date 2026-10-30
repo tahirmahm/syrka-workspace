@@ -53,13 +53,6 @@ export const toolsColor = "#8b78a0";
 
 export const knowledgeTools = [
   {
-    slug: "sessions",
-    name: "Sessions",
-    category: "Meetings",
-    description:
-      "Host meetings, teach online classes, transcribe discussions and generate intelligent notes.",
-  },
-  {
     slug: "notes",
     name: "Notes",
     category: "Meetings",

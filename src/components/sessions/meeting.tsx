@@ -370,7 +370,7 @@ export default function Meeting({
   return (
     <div className={`sessions-app ${token ? "session-in-call" : ""}`}>
       <nav className="session-nav">
-        <Link href={`/tools/sessions${sourceSuffix}`}>
+        <Link href={`/sessions${sourceSuffix}`}>
           <Video size={16} />
           Sessions
         </Link>
@@ -739,7 +739,7 @@ export default function Meeting({
                           )
                             void action({ action: "delete" }).then((result) => {
                               if (result)
-                                router.push("/tools/sessions" + sourceSuffix);
+                                router.push("/sessions" + sourceSuffix);
                             });
                         }}
                       >

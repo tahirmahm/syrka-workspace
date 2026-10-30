@@ -73,7 +73,7 @@ async function fixture(page: import("@playwright/test").Page) {
       },
     });
   });
-  await page.goto(`/workspace/tools/sessions/meeting/${id}`);
+  await page.goto(`/workspace/sessions/meeting/${id}`);
 }
 for (const viewport of [
   { width: 1440, height: 900 },
@@ -140,7 +140,7 @@ test("an invitation can open sign-in without losing its URL or offering a fake d
   await page.route("**/workspace/api/sessions**", (route) =>
     route.fulfill({ status: 401, json: { error: "Sign in to Workspace" } }),
   );
-  const path = `/workspace/tools/sessions/meeting/${id}`;
+  const path = `/workspace/sessions/meeting/${id}`;
   await page.goto(path);
   await page
     .getByRole("button", { name: "Sign in without leaving this invitation" })
@@ -155,7 +155,7 @@ test("pending admission survives reload without displaying private meeting detai
   await page.route("**/workspace/api/sessions**", (route) =>
     route.fulfill({ json: { admission: "waiting", user_id: actor } }),
   );
-  await page.goto(`/workspace/tools/sessions/meeting/${id}`);
+  await page.goto(`/workspace/sessions/meeting/${id}`);
   await expect(
     page.getByRole("button", { name: "Admission requested", exact: true }),
   ).toBeDisabled();

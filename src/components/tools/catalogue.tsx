@@ -70,8 +70,8 @@ export default function Catalogue() {
       )}
       <p className="tools-local-note">
         PDF, image and everyday utilities run locally without an account.
-        Sessions and Notes use private account-based records; media and AI
-        require configured services and consent.
+        Notes use private account-based records; AI
+        requires configured services and consent.
       </p>
     </>
   );

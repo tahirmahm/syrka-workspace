@@ -113,7 +113,7 @@ export default function SessionsDashboard({
         </p>
       </header>
       <nav className="session-nav">
-        <Link href={`/tools/sessions${suffix}`}>
+        <Link href={`/sessions${suffix}`}>
           <Video size={18} />
           Sessions
         </Link>
@@ -266,7 +266,7 @@ export default function SessionsDashboard({
             <Link
               className="session-card"
               key={`${hit.room_id}-${i}`}
-              href={`/tools/sessions/meeting/${hit.room_id}${suffix}${hit.segment_id ? `#segment-${hit.segment_id}` : `${suffix ? "&" : "?"}view=notes`}`}
+              href={`/sessions/meeting/${hit.room_id}${suffix}${hit.segment_id ? `#segment-${hit.segment_id}` : `${suffix ? "&" : "?"}view=notes`}`}
             >
               <div>
                 <small>{hit.kind}</small>
@@ -294,7 +294,7 @@ export default function SessionsDashboard({
             <Link
               key={room.id}
               className="session-card"
-              href={`/tools/sessions/meeting/${room.id}${suffix}${mode === "notes" ? (suffix ? "&" : "?") + "view=notes" : ""}`}
+              href={`/sessions/meeting/${room.id}${suffix}${mode === "notes" ? (suffix ? "&" : "?") + "view=notes" : ""}`}
             >
               <span
                 className={`file-icon ${room.kind === "lecture" ? "session-lecture" : ""}`}
