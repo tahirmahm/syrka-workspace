@@ -1,0 +1,26 @@
+{
+  "url": "https://syrka-workspace-dmasqn184-tahirmahmood439wel-gmailcoms-projects.vercel.app",
+  "expectedSha": "d0c305df67b7146c59ce015aea8c978e8560039a",
+  "checks": [
+    "Preview SHA matches the requested Git commit",
+    "User B cannot read user A private meeting",
+    "Authenticated transcript import persists",
+    "Manually authored Notes save and reopen without AI",
+    "User B cannot overwrite user A Notes",
+    "QA-only session cleanup succeeds",
+    "Preview has real AI, speech and development media capability",
+    "Real audio uploaded to private storage",
+    "Actual qwen3-asr-flash-filetrans response saved sentence timestamps",
+    "Uploaded speaker identities remain unverified",
+    "Real speech content recognized",
+    "Actual Qwen structured notes persisted",
+    "Saved real notes appear in the Workspace Notes interface",
+    "No live recognition before all participants consent",
+    "Actual qwen3-asr-flash-realtime result persisted with own-track attribution",
+    "Actual Qwen structured notes persisted",
+    "Consent revocation blocks subsequent live speech processing"
+  ],
+  "mode": "full",
+  "media": "not verified by this API/audio acceptance harness",
+  "status": "PASS_AUDIO_NOTES_AND_SECURITY"
+}

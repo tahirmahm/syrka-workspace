@@ -1,3 +1,5 @@
+> Latest calling/UI and Qwen regression status: [Sessions calling acceptance](sessions-calling.md). Historical results below are dated.
+
 # Syrka Sessions and Notes — feature branch release record
 
 **Latest status:** Real Qwen uploaded/realtime audio → saved Notes acceptance passed in Preview. LiveKit media delivery and Campus hosted acceptance remain separate open gates. Earlier sections are a dated development record; see the final Qwen acceptance section and machine-readable evidence.

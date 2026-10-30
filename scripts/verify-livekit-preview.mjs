@@ -275,6 +275,11 @@ try {
         window.__syrkaIceErrors = [];
         window.__syrkaMediaPCs = [];
         window.RTCPeerConnection = class extends Native {
+          setConfiguration(configuration) {
+            super.setConfiguration(relay
+              ? { ...configuration, iceTransportPolicy: "relay" }
+              : configuration);
+          }
           constructor(...args) {
             if (relay) args[0] = { ...args[0], iceTransportPolicy: "relay" };
             super(...args);
