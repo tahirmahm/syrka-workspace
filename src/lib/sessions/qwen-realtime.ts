@@ -25,7 +25,8 @@ export async function transcribeRealtimePcm(blob: Blob, language: string) {
   const pcm = Buffer.from(await blob.arrayBuffer());
   return new Promise<{ text: string; language: string }>((resolve, reject) => {
     let final = "",
-      settled = false;
+      settled = false,
+      phase = "connecting to the speech service";
     const ws = new WebSocket(url, {
       headers: { Authorization: `Bearer ${config.key}` },
       handshakeTimeout: 10000,
@@ -36,7 +37,7 @@ export async function transcribeRealtimePcm(blob: Blob, language: string) {
       () =>
         finish(
           new Error(
-            "Qwen live speech timed out. This audio batch was not saved; existing transcripts are intact.",
+            `Qwen live speech timed out while ${phase}. This audio batch was not saved; existing transcripts are intact.`,
           ),
         ),
       35000,
@@ -51,7 +52,8 @@ export async function transcribeRealtimePcm(blob: Blob, language: string) {
     }
     const send = (value: Record<string, unknown>) =>
       ws.send(JSON.stringify({ event_id: randomUUID(), ...value }));
-    ws.on("open", () =>
+    ws.on("open", () => {
+      phase = "waiting for session configuration";
       send({
         type: "session.update",
         session: {
@@ -60,9 +62,10 @@ export async function transcribeRealtimePcm(blob: Blob, language: string) {
           input_audio_transcription: { language },
           turn_detection: null,
         },
-      }),
-    );
+      });
+    });
     ws.on("unexpected-response", (_, response) => {
+      phase = `checking an HTTP ${response.statusCode || 502} handshake response`;
       let body = "";
       response.on("data", (chunk) => {
         if (body.length < 8000) body += chunk;
@@ -92,7 +95,10 @@ export async function transcribeRealtimePcm(blob: Blob, language: string) {
     ws.on("message", (bytes) => {
       try {
         const event = JSON.parse(bytes.toString());
-        if (event.type === "session.updated") {
+        if (event.type === "session.created") {
+          phase = "waiting for session configuration after session creation";
+        } else if (event.type === "session.updated") {
+          phase = "waiting for audio commit acknowledgment";
           for (let offset = 0; offset < pcm.length; offset += 3200)
             send({
               type: "input_audio_buffer.append",
@@ -100,6 +106,7 @@ export async function transcribeRealtimePcm(blob: Blob, language: string) {
             });
           send({ type: "input_audio_buffer.commit" });
         } else if (event.type === "input_audio_buffer.committed") {
+          phase = "waiting for final speech recognition";
           send({ type: "session.finish" });
         } else if (
           event.type === "conversation.item.input_audio_transcription.completed"
@@ -109,6 +116,7 @@ export async function transcribeRealtimePcm(blob: Blob, language: string) {
             event.transcript.length > 16000
           )
             throw Error("Invalid live transcription response.");
+          phase = "waiting for session completion";
           final += event.transcript;
         } else if (event.type === "session.finished") finish();
         else if (

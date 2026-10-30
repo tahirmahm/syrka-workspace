@@ -38,6 +38,8 @@ const result = {
   expectedSha: expected,
   rooms: [],
   checks: [],
+  mode:
+    process.env.SYRKA_QA_REALTIME_ONLY === "true" ? "realtime-only" : "full",
   media: "not verified by this API/audio acceptance harness",
 };
 const clients = await Promise.all(
@@ -179,98 +181,100 @@ try {
     "Preview has real AI, speech and development media capability",
     root.capabilities.ai && root.capabilities.stt && root.capabilities.video,
   );
-  const room = await create("QA fictional uploaded meeting");
-  const prepared = await api(0, {
-    action: "prepare_audio",
-    roomId: room,
-    size: wav.length,
-    extension: "wav",
-    confirmed: true,
-  });
-  const uploaded = await fetch(prepared.url, {
-    method: "PUT",
-    headers: { "Content-Type": "audio/wav" },
-    body: wav,
-  });
-  check("Real audio uploaded to private storage", uploaded.ok);
-  const queued = await api(0, {
-    action: "transcribe_uploaded",
-    roomId: room,
-    path: prepared.path,
-    language: "en",
-    confirmed: true,
-    request_id: randomUUID(),
-  });
-  let imported;
-  for (let i = 0; i < 48; i++) {
-    await wait(2500);
-    const polled = await api(0, {
-      action: "poll_uploaded",
+  if (process.env.SYRKA_QA_REALTIME_ONLY !== "true") {
+    const room = await create("QA fictional uploaded meeting");
+    const prepared = await api(0, {
+      action: "prepare_audio",
       roomId: room,
-      job_id: queued.job_id,
+      size: wav.length,
+      extension: "wav",
+      confirmed: true,
     });
-    if (polled.state === "done") {
-      imported = await api(0, null, room);
-      break;
-    }
-    if (polled.state === "failed") throw Error("File transcription failed.");
-  }
-  check(
-    "Actual qwen3-asr-flash-filetrans response saved sentence timestamps",
-    !!imported?.segments.length &&
-      imported.segments.every((s) => s.end_ms > s.start_ms),
-  );
-  check(
-    "Uploaded speaker identities remain unverified",
-    imported.segments.every((s) => s.speaker_id === null),
-  );
-  check(
-    "Real speech content recognized",
-    /research|draft|friday|fictional/i.test(
-      imported.segments.map((s) => s.original_text).join(" "),
-    ),
-  );
-  const saved = await notes(room);
-  result.uploadedTranscriptHash = createHash("sha256")
-    .update(JSON.stringify(saved.segments))
-    .digest("hex");
-  browser = await chromium.launch({
-    executablePath:
-      process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || "/usr/bin/chromium",
-    args: ["--no-sandbox"],
-    proxy: process.env.HTTPS_PROXY
-      ? { server: process.env.HTTPS_PROXY }
-      : undefined,
-  });
-  const context = await browser.newContext();
-  await context.route(new URL(target).origin + "/**", (route) =>
-    route.continue({
-      headers: {
-        ...route.request().headers(),
-        "x-vercel-trusted-oidc-idp-token": oidc,
-      },
-    }),
-  );
-  await context.addInitScript(
-    ({ session, origin }) => {
-      if (location.origin === origin) {
-        localStorage.setItem(
-          "sb-zguejzlseldovdssiumn-auth-token",
-          JSON.stringify(session),
-        );
-        sessionStorage.removeItem("syrka-workspace-demo");
+    const uploaded = await fetch(prepared.url, {
+      method: "PUT",
+      headers: { "Content-Type": "audio/wav" },
+      body: wav,
+    });
+    check("Real audio uploaded to private storage", uploaded.ok);
+    const queued = await api(0, {
+      action: "transcribe_uploaded",
+      roomId: room,
+      path: prepared.path,
+      language: "en",
+      confirmed: true,
+      request_id: randomUUID(),
+    });
+    let imported;
+    for (let i = 0; i < 48; i++) {
+      await wait(2500);
+      const polled = await api(0, {
+        action: "poll_uploaded",
+        roomId: room,
+        job_id: queued.job_id,
+      });
+      if (polled.state === "done") {
+        imported = await api(0, null, room);
+        break;
       }
-    },
-    { session: actors[0].session, origin: new URL(target).origin },
-  );
-  const page = await context.newPage();
-  await page.goto(
-    target + "/workspace/tools/sessions/meeting/" + room + "?view=notes",
-  );
-  await page
-    .getByRole("heading", { name: "Overview", exact: true })
-    .waitFor({ timeout: 30000 });
-  check("Saved real notes appear in the Workspace Notes interface", true);
+      if (polled.state === "failed") throw Error("File transcription failed.");
+    }
+    check(
+      "Actual qwen3-asr-flash-filetrans response saved sentence timestamps",
+      !!imported?.segments.length &&
+        imported.segments.every((s) => s.end_ms > s.start_ms),
+    );
+    check(
+      "Uploaded speaker identities remain unverified",
+      imported.segments.every((s) => s.speaker_id === null),
+    );
+    check(
+      "Real speech content recognized",
+      /research|draft|friday|fictional/i.test(
+        imported.segments.map((s) => s.original_text).join(" "),
+      ),
+    );
+    const saved = await notes(room);
+    result.uploadedTranscriptHash = createHash("sha256")
+      .update(JSON.stringify(saved.segments))
+      .digest("hex");
+    browser = await chromium.launch({
+      executablePath:
+        process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || "/usr/bin/chromium",
+      args: ["--no-sandbox"],
+      proxy: process.env.HTTPS_PROXY
+        ? { server: process.env.HTTPS_PROXY }
+        : undefined,
+    });
+    const context = await browser.newContext();
+    await context.route(new URL(target).origin + "/**", (route) =>
+      route.continue({
+        headers: {
+          ...route.request().headers(),
+          "x-vercel-trusted-oidc-idp-token": oidc,
+        },
+      }),
+    );
+    await context.addInitScript(
+      ({ session, origin }) => {
+        if (location.origin === origin) {
+          localStorage.setItem(
+            "sb-zguejzlseldovdssiumn-auth-token",
+            JSON.stringify(session),
+          );
+          sessionStorage.removeItem("syrka-workspace-demo");
+        }
+      },
+      { session: actors[0].session, origin: new URL(target).origin },
+    );
+    const page = await context.newPage();
+    await page.goto(
+      target + "/workspace/tools/sessions/meeting/" + room + "?view=notes",
+    );
+    await page
+      .getByRole("heading", { name: "Overview", exact: true })
+      .waitFor({ timeout: 30000 });
+    check("Saved real notes appear in the Workspace Notes interface", true);
+  }
   const live = await create("QA fictional consenting live audio");
   await api(1, {
     action: "request_join",
@@ -338,7 +342,10 @@ try {
     "Consent revocation blocks subsequent live speech processing",
     !revoked.ok(),
   );
-  result.status = "PASS_AUDIO_NOTES_AND_SECURITY";
+  result.status =
+    process.env.SYRKA_QA_REALTIME_ONLY === "true"
+      ? "PASS_REALTIME_NOTES_AND_SECURITY"
+      : "PASS_AUDIO_NOTES_AND_SECURITY";
 } catch (error) {
   result.status = "FAILED_OR_BLOCKED";
   result.error = String(error.message).slice(0, 600);

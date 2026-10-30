@@ -7,7 +7,7 @@
     "server.ts": "3ca9762fc7de8e0c27024c7db576a495e1cb0bc5df1b1d1b86802ca43157b10c",
     "transcripts.ts": "43a1a2466eec6180742346abc430142e5ebd1c2ee2e50f3e5c55a332a22b5047",
     "qwen.ts": "2b56fe5fbb7302d5a9222b06781794a742ab7802e224fab0593e86c261e3b194",
-    "qwen-realtime.ts": "0ee2b9ab35c37b2cb35e25692b955e3d67783976ea503050f6c1000f82894d5f",
+    "qwen-realtime.ts": "4f0bedfcae7b9109444d975e9b3c65ebbe18130eb9e55f816e1279818c887c05",
     "qwen-filetrans.ts": "b3a7a75c7e8f6cd265b7153fcf1679a50137046acfccebee47283748f710301d"
   }
 }
