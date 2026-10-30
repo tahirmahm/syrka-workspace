@@ -1,12 +1,23 @@
 import { afterEach, expect, test, vi } from "vitest";
-const wire = vi.hoisted(() => ({ sent: [] as string[], fail: false }));
+const wire = vi.hoisted(() => ({
+  sent: [] as string[],
+  fail: false,
+  beforeCreated: [] as string[],
+}));
 vi.mock("ws", async () => {
   const { EventEmitter } = await import("node:events");
   return {
     default: class extends EventEmitter {
       constructor() {
         super();
-        queueMicrotask(() => this.emit("open"));
+        queueMicrotask(() => {
+          this.emit("open");
+          wire.beforeCreated = [...wire.sent];
+          this.emit(
+            "message",
+            Buffer.from(JSON.stringify({ type: "session.created" })),
+          );
+        });
       }
       send(raw: string) {
         const event = JSON.parse(raw);
@@ -54,6 +65,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
   wire.sent = [];
   wire.fail = false;
+  wire.beforeCreated = [];
 });
 test("manual audio commit is followed by session.finish before waiting for final recognition", async () => {
   configure();
@@ -62,6 +74,7 @@ test("manual audio commit is followed by session.finish before waiting for final
     "en",
   );
   expect(result.text).toBe("A real utterance.");
+  expect(wire.beforeCreated).toEqual([]);
   expect(wire.sent).toEqual([
     "session.update",
     "input_audio_buffer.append",

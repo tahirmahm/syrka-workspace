@@ -53,7 +53,9 @@ export async function transcribeRealtimePcm(blob: Blob, language: string) {
     const send = (value: Record<string, unknown>) =>
       ws.send(JSON.stringify({ event_id: randomUUID(), ...value }));
     ws.on("open", () => {
-      phase = "waiting for session configuration";
+      phase = "waiting for speech session creation";
+    });
+    const configureSession = () => {
       send({
         type: "session.update",
         session: {
@@ -63,7 +65,7 @@ export async function transcribeRealtimePcm(blob: Blob, language: string) {
           turn_detection: null,
         },
       });
-    });
+    };
     ws.on("unexpected-response", (_, response) => {
       phase = `checking an HTTP ${response.statusCode || 502} handshake response`;
       let body = "";
@@ -97,6 +99,7 @@ export async function transcribeRealtimePcm(blob: Blob, language: string) {
         const event = JSON.parse(bytes.toString());
         if (event.type === "session.created") {
           phase = "waiting for session configuration after session creation";
+          configureSession();
         } else if (event.type === "session.updated") {
           phase = "waiting for audio commit acknowledgment";
           for (let offset = 0; offset < pcm.length; offset += 3200)
