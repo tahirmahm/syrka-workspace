@@ -22,6 +22,7 @@ const name = `syrka-development-probe-${randomUUID()}`;
 let browser,
   server,
   created = false;
+let pages = [];
 const watchdog = setTimeout(() => {
   console.error("LiveKit probe exceeded the bounded network deadline.");
   void browser?.close();
@@ -70,7 +71,7 @@ try {
       browser.newContext({ permissions: ["camera", "microphone"] }),
     ),
   );
-  const pages = await Promise.all(contexts.map((c) => c.newPage()));
+  pages = await Promise.all(contexts.map((c) => c.newPage()));
   await Promise.all(
     pages.map(async (page, index) => {
       const token = new AccessToken(
@@ -101,16 +102,20 @@ try {
           try {
             await room.connect(url, token, {
               maxRetries: 0,
-          peerConnectionTimeout: 15000,
+              peerConnectionTimeout: 15000,
               websocketTimeout: 15000,
             });
+            window.probe.state = "signaling-connected";
             await room.localParticipant.setMicrophoneEnabled(true);
+            window.probe.state = "microphone-published";
             await room.localParticipant.setCameraEnabled(true);
             window.probe.state = "connected";
           } catch (e) {
             window.probe.state = "failed";
             window.probe.error = e.name;
-          window.probe.reason = String(e.message).replace(/https?:[^ ]+|wss?:[^ ]+/g,"[endpoint]").slice(0,160);
+            window.probe.reason = String(e.message)
+              .replace(/https?:[^ ]+|wss?:[^ ]+/g, "[endpoint]")
+              .slice(0, 160);
           }
         },
         { url: config.LIVEKIT_URL, token: await token.toJwt() },
@@ -171,6 +176,11 @@ try {
     }),
   );
 } catch (error) {
+  for (const page of pages) {
+    const state = await page.evaluate(() => window.probe).catch(() => null);
+    if (state)
+      console.error("Development media probe state:", JSON.stringify(state));
+  }
   console.error(
     JSON.stringify({
       transport: "BLOCKED_OR_FAILED",

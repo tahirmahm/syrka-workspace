@@ -1,0 +1,18 @@
+{
+  "url": "https://syrka-workspace-75bpo6c9s-tahirmahmood439wel-gmailcoms-projects.vercel.app",
+  "expectedSha": "74e2024bb89989ff08aa137231bb6e3d9c07d9a2",
+  "checks": [
+    "Preview SHA matches the requested Git commit",
+    "User B cannot read user A private meeting",
+    "Authenticated transcript import persists",
+    "Manually authored Notes save and reopen without AI",
+    "User B cannot overwrite user A Notes",
+    "QA-only session cleanup succeeds"
+  ],
+  "media": "not verified by this API/audio acceptance harness",
+  "status": "FAILED_OR_BLOCKED",
+  "error": "Acceptance failed: Preview has real AI, speech and development media capability",
+  "checked_at": "2026-10-30T04:39:00Z",
+  "provider_response_verified": false,
+  "livekit_media_verified": false
+}

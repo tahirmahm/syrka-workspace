@@ -122,13 +122,64 @@ try {
     root.deployment_sha === expected,
   );
   console.log("Preview capabilities:", JSON.stringify(root.capabilities));
+  const securityRoom = await create(
+    "QA authorization and manual Notes persistence",
+  );
+  const foreign = await clients[1].get(
+    "/workspace/api/sessions?id=" + securityRoom,
+  );
+  check("User B cannot read user A private meeting", foreign.status() === 404);
+  await api(0, {
+    action: "import",
+    roomId: securityRoom,
+    text: "Fictional verification transcript.",
+    format: "txt",
+    confirmed: true,
+  });
+  const manualTranscript = await api(0, null, securityRoom);
+  check(
+    "Authenticated transcript import persists",
+    manualTranscript.segments.length === 1,
+  );
+  const body = {
+    overview: [
+      {
+        text: "Fictional manually authored note.",
+        segment_ids: [manualTranscript.segments[0].id],
+      },
+    ],
+    topics: [],
+    decisions: [],
+    actions: [],
+    concepts: [],
+    questions: [],
+  };
+  await api(0, {
+    action: "save_note",
+    roomId: securityRoom,
+    body,
+    published: false,
+    ai_generated: false,
+  });
+  const reopened = await api(0, null, securityRoom);
+  check(
+    "Manually authored Notes save and reopen without AI",
+    reopened.note?.body.overview[0].text === body.overview[0].text,
+  );
+  const foreignWrite = await clients[1].post("/workspace/api/sessions", {
+    data: { action: "save_note", roomId: securityRoom, body, published: false },
+  });
+  check(
+    "User B cannot overwrite user A Notes",
+    [403, 404].includes(foreignWrite.status()),
+  );
+  await api(0, { action: "delete", roomId: securityRoom });
+  check("QA-only session cleanup succeeds", true);
   check(
     "Preview has real AI, speech and development media capability",
     root.capabilities.ai && root.capabilities.stt && root.capabilities.video,
   );
   const room = await create("QA fictional uploaded meeting");
-  const foreign = await clients[1].get("/workspace/api/sessions?id=" + room);
-  check("User B cannot read user A private meeting", foreign.status() === 404);
   const prepared = await api(0, {
     action: "prepare_audio",
     roomId: room,

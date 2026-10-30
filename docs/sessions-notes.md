@@ -90,3 +90,28 @@ Before release: pass actual Workspace meeting → authorized audio → provider 
 ## Remaining scope
 
 Recording/egress/playback, a continuously streamed transcription UI, unattended long-running summary workers, automatic physical retention purging, calendar delivery/invitation emails, DST-aware recurrence, real project foreign keys, cross-lecture comparison, semantic retrieval and ontology/Roadmaps identifiers remain unimplemented. Attendance and AI notes are not proficiency, qualifications or public Career Passport evidence. No external messages/tasks are sent automatically.
+
+## Observed Preview acceptance — 30 October 2026, 04:39 UTC
+
+Workspace Git-linked Preview at commit `74e2024bb89989ff08aa137231bb6e3d9c07d9a2` is READY. Campus Preview at `90a13fce766e1beeab052e5392640eb2b72a0a67` is READY. Production remains on main (`2e7cda3` Workspace / `82b020b` Campus); neither draft PR was merged.
+
+Actual authenticated Workspace server checks passed with two isolated, normally registered QA accounts:
+
+- Deployment SHA matches the expected Git commit.
+- User B cannot read user A's private meeting (404).
+- A permitted text transcript import persists in hosted Postgres.
+- Manually authored Notes save and reopen with source references intact.
+- User B cannot overwrite user A's Notes.
+- The QA session and its records were deleted after verification.
+
+**AI/audio acceptance did not pass.** The deployed server recognizes the API key, model, free-tier confirmation and protected-quota flags, but rejects `SYRKA_AI_BASE_URL` as an invalid Singapore OpenAI-compatible endpoint. This is invalid runtime configuration, not a missing key or an assumption about the user's quota. Vercel records this variable as a Secret, so its value cannot be read back through the operator CLI. No actual Qwen transcription or generated-notes response has been verified. The normal failure is visible and does not fall back to demo, a paid model, or another provider.
+
+Correct the Preview variable to the endpoint shown for the general-purpose Singapore key: `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` or `https://YOUR_ACTUAL_WORKSPACE_ID.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1`. Replace the workspace placeholder; do not include quotes or `/chat/completions`. Do not post the API key. Runtime environment updates require a subsequent automatic Git Preview build. Re-run `scripts/verify-sessions-preview.mjs` with that exact Preview URL and SHA and private QA fixtures.
+
+LiveKit's development API authenticated and created an isolated room, but the two-browser audio/video transport probe exceeded its bounded deadline. Its room was cleaned up. Credential validation is not proof of media delivery; the meeting-to-audio-to-notes demonstration remains unverified.
+
+The Campus connector was retried: it lists only organization `xxwikrftscbssryvcydh` (Syrka), containing Workspace and Syrka.V12. `get_project` and SQL access to Campus `pftbpimhyophitfuzcxn` return permission denied. Browser-dashboard access has not transferred to the connector. Reconnect it using an account/organization authorization that includes the existing Campus project; no replacement project was created and no Campus hosted migration or student/instructor acceptance is claimed.
+
+Latest local checks: Workspace lint, typecheck, 35 unit/database tests, production build, and all 37 browser regression tests passed. Campus lint, strict TypeScript, 19 unit/database tests and production build passed; the prior two setup/mobile browser checks also passed. Hosted Workspace notes policies were split into action-specific policies without changing authorization, and the missing room foreign-key index was added. The hosted migration filenames match history. Advisors show no new security warnings; existing leaked-password protection is a paid-tier limitation and remains unchanged. Unused new indexes are informational.
+
+Free-only controls and development-only LiveKit scope remain in place. No DNS, production release, account upgrade or paid fallback was performed. The API acceptance harness distinguishes manually saved notes from actual provider-generated notes.
