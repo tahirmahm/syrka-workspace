@@ -134,8 +134,18 @@ export async function transcribeRealtimePcm(blob: Blob, language: string) {
               ),
             ),
           );
-      } catch {
-        finish(new Error("Qwen returned an invalid live speech response."));
+      } catch (error) {
+        const kind =
+          error instanceof Error
+            ? error.message === "Invalid live transcription response."
+              ? "CompletionShapeError"
+              : error.name
+            : "UnknownError";
+        finish(
+          new Error(
+            `Qwen returned an invalid live speech response (${kind}; ${phase}).`,
+          ),
+        );
       }
     });
   });
