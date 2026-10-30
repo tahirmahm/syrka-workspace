@@ -6,7 +6,7 @@
     "providers.ts": "5744d941be1047fbeaae79efbbac1798ddbc7d4f22f380955f56e54aa622f62d",
     "server.ts": "3ca9762fc7de8e0c27024c7db576a495e1cb0bc5df1b1d1b86802ca43157b10c",
     "transcripts.ts": "43a1a2466eec6180742346abc430142e5ebd1c2ee2e50f3e5c55a332a22b5047",
-    "qwen.ts": "a597495faa1ba8b65c78afb9da1b27a8ef9eeab05d422929c8f18bf457e298dc",
+    "qwen.ts": "2b56fe5fbb7302d5a9222b06781794a742ab7802e224fab0593e86c261e3b194",
     "qwen-realtime.ts": "f675c26b25b09d28a5e51a7c91a98457dd1e4b27875b9d37c30d19cc0fee2b9f",
     "qwen-filetrans.ts": "b3a7a75c7e8f6cd265b7153fcf1679a50137046acfccebee47283748f710301d"
   }

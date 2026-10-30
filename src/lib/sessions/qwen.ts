@@ -26,7 +26,9 @@ export function validQwenEndpoint(baseURL: string) {
       !url.port &&
       !url.search &&
       !url.hash &&
-      (url.hostname === "dashscope-intl.aliyuncs.com" ||
+      (url.hostname === "ap-southeast-1.maas.qwencloudapi.com" ||
+        url.hostname === "maas.qwencloudapi.com" ||
+        url.hostname === "dashscope-intl.aliyuncs.com" ||
         /^[a-zA-Z0-9-]+\.ap-southeast-1\.maas\.aliyuncs\.com$/.test(
           url.hostname,
         )) &&

@@ -2,6 +2,7 @@ import { afterEach, test, expect, vi } from "vitest";
 import {
   qwenConfiguration,
   qwenReady,
+  validQwenEndpoint,
   qwenConfigurationIssues,
   qwenSpeechReady,
   qwenSpeechRequest,
@@ -228,4 +229,16 @@ test("configuration diagnostics identify the failed gate without disclosing cred
   expect(issues.join(" ")).not.toContain("private-credential");
   expect(issues.join(" ")).not.toContain("sk-unit-test");
   expect(qwenReady()).toBe(false);
+});
+
+test("current QwenCloud Singapore regional endpoints are accepted without allowing other regions or Token Plan", () => {
+  for (const host of ["ap-southeast-1.maas.qwencloudapi.com", "maas.qwencloudapi.com"]) {
+    configured();
+    vi.stubEnv("SYRKA_AI_BASE_URL", `https://${host}/compatible-mode/v1`);
+    expect(qwenReady()).toBe(true);
+    expect(qwenSpeechReady()).toBe(true);
+  }
+  for (const host of ["cn-beijing.maas.qwencloudapi.com", "token-plan.maas.qwencloudapi.com", "ap-southeast-1.maas.qwencloudapi.com.evil.example"]) {
+    expect(validQwenEndpoint(`https://${host}/compatible-mode/v1`)).toBe(false);
+  }
 });
