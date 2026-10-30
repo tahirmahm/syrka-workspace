@@ -1,18 +1,39 @@
 {
-  "url": "https://syrka-workspace-75bpo6c9s-tahirmahmood439wel-gmailcoms-projects.vercel.app",
-  "expectedSha": "74e2024bb89989ff08aa137231bb6e3d9c07d9a2",
+  "url": "https://syrka-workspace-bt1birky9-tahirmahmood439wel-gmailcoms-projects.vercel.app",
+  "expectedSha": "ccca9eb17da568aacfd7808d34e867c2272e0e4d",
   "checks": [
     "Preview SHA matches the requested Git commit",
     "User B cannot read user A private meeting",
     "Authenticated transcript import persists",
     "Manually authored Notes save and reopen without AI",
     "User B cannot overwrite user A Notes",
-    "QA-only session cleanup succeeds"
+    "QA-only session cleanup succeeds",
+    "Preview has real AI, speech and development media capability",
+    "Real audio uploaded to private storage",
+    "Actual qwen3-asr-flash-filetrans response saved sentence timestamps",
+    "Uploaded speaker identities remain unverified",
+    "Real speech content recognized",
+    "Actual Qwen structured notes persisted",
+    "Saved real notes appear in the Workspace Notes interface",
+    "No live recognition before all participants consent",
+    "Actual qwen3-asr-flash-realtime result persisted with own-track attribution",
+    "Actual Qwen structured notes persisted",
+    "Consent revocation blocks subsequent live speech processing"
   ],
+  "mode": "full",
   "media": "not verified by this API/audio acceptance harness",
-  "status": "FAILED_OR_BLOCKED",
-  "error": "Acceptance failed: Preview has real AI, speech and development media capability",
-  "checked_at": "2026-10-30T04:39:00Z",
-  "provider_response_verified": false,
-  "livekit_media_verified": false
+  "uploadedTranscriptHash": "d22616f8d4d4f6d6326451a6af15bbb96f22f01289f184f049a033a43acc72a8",
+  "status": "PASS_AUDIO_NOTES_AND_SECURITY",
+  "consent_denial": {
+    "status": 400,
+    "explicit_consent_error": true,
+    "transcript_and_jobs_unchanged": true
+  },
+  "cleanup": {
+    "qa_rooms_deleted": 8,
+    "scope": "Only the private QA actor\u2019s explicitly tagged verification rooms and audio; real user files untouched"
+  },
+  "checked_at": "2026-10-30T05:32:59.723889+00:00",
+  "livekit_media_verified": false,
+  "provider_responses_verified": true
 }

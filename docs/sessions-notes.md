@@ -1,5 +1,7 @@
 # Syrka Sessions and Notes — feature branch release record
 
+**Latest status:** Real Qwen uploaded/realtime audio → saved Notes acceptance passed in Preview. LiveKit media delivery and Campus hosted acceptance remain separate open gates. Earlier sections are a dated development record; see the final Qwen acceptance section and machine-readable evidence.
+
 ## Current decisions (30 October 2026, Europe/Prague)
 
 Continue the existing `feature/sessions-notes` branches and draft PRs Workspace #4 / Campus #8. Do not merge or promote to production until acceptance passes. Preserve existing editors, academic features, identities, storage and DNS.
@@ -123,3 +125,27 @@ The user provided `https://ap-southeast-1.maas.qwencloudapi.com/compatible-mode/
 Verified official documentation: [Regions and endpoints](https://docs.qwencloud.com/developer-guides/getting-started/regions), [Qwen ASR API](https://docs.qwencloud.com/api-reference/speech-recognition/qwen-asr/api-reference), [Realtime WebSocket overview](https://docs.qwencloud.com/api-reference/realtime-api/websocket-overview). Filetrans and realtime use their existing API paths on the configured regional origin; no provider or paid fallback is introduced.
 
 Vercel's most recent user redeploy observed before this correction targeted `main`/Production at unchanged main commit `2e7cda3`, rather than the feature branch. This code correction is deployed only through a new automatic Git-linked feature Preview. Campus access and two-client LiveKit media delivery remain separate acceptance gates.
+
+## Qwen acceptance passed — 30 October 2026
+
+The combined real-provider test passed against Git-linked Workspace Preview **`ccca9eb17da568aacfd7808d34e867c2272e0e4d`** at https://syrka-workspace-bt1birky9-tahirmahmood439wel-gmailcoms-projects.vercel.app/workspace/tools/sessions. All configuration diagnostics pass with the current Singapore QwenCloud URL. No API key was read back or exposed and no paid fallback was enabled.
+
+Verified using locally generated fictional English audio and two normally authenticated, isolated QA actors:
+
+- Private WAV upload → actual `qwen3-asr-flash-filetrans` response → saved sentence timestamps and recognized speech.
+- Actual `qwen3.8-flash` structured notes → source-reference validation → persisted Notes → authenticated browser reopening the real Notes interface. An earlier verified generated note reported 510 input / 1081 output tokens, four overview claims, one topic and two actions; it remained unpublished for human review.
+- Actual `qwen3-asr-flash-realtime` PCM-batch responses → persisted transcript with authenticated own-track attribution → another actual Qwen-generated saved note.
+- No recognition before every admitted participant consents; revocation blocks the next batch. An additional direct check confirmed HTTP 400 with an explicit consent error and no changes to existing transcript or jobs.
+- User B cannot read user A's private meeting or overwrite its notes. A direct Storage test also verified that the current host can upload/read private audio while another user cannot download the same object; its fixture was deleted.
+
+The realtime failure was a production bundling defect, not a missing key: Next's bundled `ws` used an empty optional `bufferutil` module, causing a TypeError when masking outbound frames. Both applications now use `serverExternalPackages: ["ws"]`. `node scripts/verify-websocket-build.mjs` verifies the production trace includes the native runtime and performs a real localhost masked-frame round trip. Protocol handling now also waits for session creation before configuration, sends session.finish after commit acknowledgement, handles item-specific failures and reports bounded stages without private payloads. Mocked unit protocol tests alone did not catch the native bundling defect; the build smoke test and real Preview calls do.
+
+Latest checks passed: Workspace lint, typecheck, 38 unit/database tests, production build, native transport build smoke and all 37 browser regressions; Campus lint, strict TypeScript, 19 unit/database tests, production build, native transport build smoke and both setup/mobile browser checks. One initial parallel local browser invocation collided on port 3000; sequential execution passed. There is no remaining observed Qwen failure in the combined acceptance run.
+
+**This is Qwen API/audio-to-Notes acceptance, not a passed two-client LiveKit meeting.** Actual LiveKit media delivery and browser microphone-to-provider capture remain separate gates. Uploaded speakers are unknown; live attribution identifies the authenticated microphone owner, not diarization or verified voice identity. Live timestamps represent batch intervals. Only the fictional English fixture was tested against the real models; other supported languages have not all been verified. This is bounded near-real-time batching, not continuous word-by-word streaming.
+
+Campus hosted access and the instructor → class → published Notes → student dashboard workflow remain blocked independently. No Campus database migration was applied during this work. Both PRs stay drafts, with no merge, production promotion, DNS changes, service upgrade or paid fallback. Temporary QA session/audio records are removed after verification; existing user files are preserved. QA identities remain private for the remaining development acceptance tests.
+
+Evidence in the Workspace repository: `docs/acceptance/sessions-preview-2026-10-30.json` (combined pass), `qwen-realtime-2026-10-30.json` (focused realtime pass), `qwen-uploaded-notes-2026-10-30.json` (earlier upload/Notes pass within a then-failing realtime run), and `private-audio-2026-10-30.json` (direct Storage isolation).
+
+To rerun only realtime recognition without spending more upload quota, use the operator harness with `SYRKA_QA_REALTIME_ONLY=true`, an exact Git-linked Preview URL/SHA and private QA fixtures. Unset it for the full combined workflow. The final evidence/documentation commit does not change the tested application runtime.

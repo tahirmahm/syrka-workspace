@@ -308,7 +308,11 @@ try {
   const denied = await clients[0].post("/workspace/api/sessions", {
     multipart: batch,
   });
-  check("No live recognition before all participants consent", !denied.ok());
+  const deniedBody = await denied.json();
+  check(
+    "No live recognition before all participants consent",
+    denied.status() === 400 && /consent/i.test(deniedBody.error || ""),
+  );
   await api(1, { action: "consent", roomId: live, consent: true });
   for (let offset = 0; offset < pcm.length; offset += 128000) {
     const part = pcm.subarray(offset, offset + 128000);
@@ -338,9 +342,10 @@ try {
   const revoked = await clients[0].post("/workspace/api/sessions", {
     multipart: { ...batch, request_id: randomUUID() },
   });
+  const revokedBody = await revoked.json();
   check(
     "Consent revocation blocks subsequent live speech processing",
-    !revoked.ok(),
+    revoked.status() === 400 && /consent/i.test(revokedBody.error || ""),
   );
   result.status =
     process.env.SYRKA_QA_REALTIME_ONLY === "true"
