@@ -353,9 +353,30 @@ function CallCanvas({
         "[data-participant-identity]",
       ) || []),
     ];
+    const playableRemote =
+      tracks.find(
+        (t) =>
+          !t.participant.isLocal &&
+          t.source === Track.Source.Camera &&
+          t.participant.identity === speakers[0]?.identity &&
+          isTrackReference(t) &&
+          t.publication.track &&
+          !t.publication.isMuted,
+      ) ||
+      tracks.find(
+        (t) =>
+          !t.participant.isLocal &&
+          isTrackReference(t) &&
+          t.publication.track &&
+          !t.publication.isMuted,
+      ) ||
+      focus;
     const tile =
       tiles.find(
-        (t) => t.dataset.participantIdentity === focus?.participant.identity,
+        (t) =>
+          t.dataset.participantIdentity ===
+            playableRemote?.participant.identity &&
+          t.dataset.sessionSource === playableRemote?.source,
       ) || tiles[0];
     const video = tile?.querySelector<HTMLVideoElement>("video");
     if (!nativePip || !video || video.readyState < 2) {
@@ -727,6 +748,7 @@ function CallCanvas({
           aria-label="Show participants"
           aria-expanded={people}
           onClick={() => {
+            if (panelOpen) onPanel();
             setPeople(!people);
             setChat(false);
           }}
@@ -738,6 +760,7 @@ function CallCanvas({
           aria-label="Open meeting chat"
           aria-expanded={chat}
           onClick={() => {
+            if (panelOpen) onPanel();
             setChat(!chat);
             setPeople(false);
           }}
@@ -778,7 +801,11 @@ function CallCanvas({
                   : "Toggle transcript and notes"
               }
               aria-expanded={panelOpen}
-              onClick={onPanel}
+              onClick={() => {
+                setPeople(false);
+                setChat(false);
+                onPanel();
+              }}
             >
               <PanelRight size={17} />
               {panelLabel === "Consent"

@@ -130,6 +130,16 @@ for (const viewport of [
       page.getByText("Host controls", { exact: true }),
     ).toBeVisible();
     await page
+      .getByRole("button", { name: "Show participants", exact: true })
+      .click();
+    await expect(
+      page.getByRole("complementary", { name: "Connected participants" }),
+    ).toBeVisible();
+    await expect(page.locator(".session-side-panel")).not.toHaveAttribute(
+      "open",
+      "",
+    );
+    await page
       .getByRole("button", { name: "Leave meeting", exact: true })
       .click();
     await expect(frame).toHaveCount(0);
