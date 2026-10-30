@@ -1,6 +1,7 @@
 /** Real hosted host/account-free guest acceptance. No provider keys or auth users created. */
 import { readFile, writeFile } from "node:fs/promises";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { chromium, request } from "@playwright/test";
 import { SignalResponse } from "@livekit/protocol";
 const target = process.env.SYRKA_PREVIEW_URL,
@@ -473,6 +474,115 @@ try {
   await pages[1]
     .getByRole("button", { name: "Leave meeting", exact: true })
     .click();
+  if (process.env.SYRKA_QA_GUEST_AUDIO === "true") {
+    const pcm = await readFile(
+      process.env.SYRKA_QA_PCM || "/tmp/syrka-meeting-test.pcm",
+    );
+    const batch = {
+      roomId,
+      start_ms: "0",
+      end_ms: "4000",
+      language: "en",
+      request_id: randomUUID(),
+      audio: {
+        name: "guest.pcm",
+        mimeType: "audio/pcm",
+        buffer: pcm.subarray(0, 128000),
+      },
+    };
+    const send = (data) =>
+      pages[1]
+        .context()
+        .request.post(target + "/workspace/api/sessions/guest", {
+          headers,
+          multipart: data,
+          timeout: 90000,
+        });
+    await hostApi({
+      action: "host_update",
+      roomId,
+      patch: { status: "live", transcribing: true },
+    });
+    await hostApi({ action: "consent", roomId, consent: true });
+    const denied = await send(batch);
+    check(
+      "Guest audio is blocked before explicit guest consent",
+      denied.status() === 403,
+    );
+    check(
+      "Guest can explicitly consent",
+      (
+        await guestApi({ action: "consent", roomId, consent: true })
+      ).response.ok(),
+    );
+    for (let offset = 0; offset < pcm.length; offset += 128000) {
+      const part = pcm.subarray(offset, offset + 128000);
+      if (part.length < 3200) break;
+      const sent = await send({
+        ...batch,
+        request_id: randomUUID(),
+        start_ms: String(Math.floor(offset / 32)),
+        end_ms: String(Math.floor((offset + part.length) / 32)),
+        audio: { name: "guest.pcm", mimeType: "audio/pcm", buffer: part },
+      });
+      const body = await sent.json();
+      assert(
+        sent.ok(),
+        `Guest real ASR ${sent.status()}: ${body.error || "failed"}`,
+      );
+    }
+    const snap = await hostApi(null, roomId);
+    check(
+      "Actual Qwen guest speech saved with timestamps and scoped attribution",
+      snap.segments.some(
+        (s) =>
+          s.guest_speaker_id === guestId &&
+          s.speaker_id === null &&
+          s.original_text?.trim() &&
+          s.end_ms > s.start_ms,
+      ),
+    );
+    const job = await hostApi({
+      action: "process",
+      roomId,
+      kind: "notes",
+      request_id: randomUUID(),
+    });
+    let noteId;
+    for (let n = 0; n < 36; n++) {
+      await new Promise((r) => setTimeout(r, 2500));
+      const saved = await hostApi(null, roomId);
+      const record = saved.jobs.find((j) => j.id === job.job_id);
+      assert(
+        record?.state !== "failed",
+        `Guest notes ${record?.error || "provider failed"}`,
+      );
+      if (record?.state === "done") {
+        check(
+          "Actual Qwen notes from guest transcript save and reopen",
+          !!saved.note?.body.overview?.length,
+        );
+        noteId = saved.note.id;
+        break;
+      }
+    }
+    assert(noteId, "Guest notes exceeded acceptance deadline");
+    const privateSnap = await guestApi();
+    check(
+      "Guest cannot read host notes or guest transcript",
+      privateSnap.body.note === null && privateSnap.body.segments.length === 0,
+    );
+    await guestApi({ action: "consent", roomId, consent: false });
+    check(
+      "Guest consent revocation blocks new provider audio",
+      (await send({ ...batch, request_id: randomUUID() })).status() === 403,
+    );
+    await hostApi({
+      action: "host_update",
+      roomId,
+      patch: { transcribing: false },
+    });
+  }
   const minted = await guestApi({ action: "token", roomId });
   assert(minted.response.ok());
   const claims = JSON.parse(
@@ -504,6 +614,18 @@ try {
   check(
     "Host can end real meeting",
     (await hostApi(null, roomId)).room.status === "ended",
+  );
+  result.token_replay_after_end = await signaling(
+    pages[1],
+    minted.body.url,
+    minted.body.token,
+  );
+  check(
+    "Ending a meeting does not let an old guest JWT recreate its room",
+    before.joined &&
+      !result.token_replay_after_end.joined &&
+      result.token_replay_after_end.status !== "timeout" &&
+      claims.exp > Date.now() / 1000,
   );
   result.status = result.media_verified
     ? "PASS_ACCOUNT_FREE_MEDIA"

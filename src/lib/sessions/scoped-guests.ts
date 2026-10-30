@@ -60,10 +60,9 @@ export async function revokeGuestMedia(
   room: string,
   guest: { user_id: string; expires_at?: string },
 ) {
-  const horizon = Math.max(
-    Math.floor(Date.now() / 1000) + 300,
-    Math.floor(Date.parse(guest.expires_at || "") / 1000) || 0,
-  );
+  // LiveKit Cloud accepts revocation timestamps only within 60 seconds of now.
+  // A small future cutoff also covers grants already being minted in flight.
+  const horizon = Math.floor(Date.now() / 1000) + 30;
   try {
     await livekitService().removeParticipant(
       `syrka-workspace-${room}`,
@@ -229,7 +228,10 @@ export async function guestHandler(request: Request) {
             throw error;
         }
       }
-      const ttl = Math.min(60, Math.floor((Date.parse(member.expires_at) - Date.now()) / 1000));
+      const ttl = Math.min(
+        60,
+        Math.floor((Date.parse(member.expires_at) - Date.now()) / 1000),
+      );
       if (ttl < 1) throw new GuestError(401, "Guest admission has expired.");
       const token = new AccessToken(
         process.env.LIVEKIT_API_KEY!,
@@ -247,10 +249,10 @@ export async function guestHandler(request: Request) {
         canPublish: member.can_publish,
         canPublishData: true,
       });
-      return response({
-        token: await token.toJwt(),
-        url: validatedMediaUrl().toString(),
-      });
+      const jwt = await token.toJwt();
+      // Recheck admission after remote room provisioning/signing, before release.
+      await access("token");
+      return response({ token: jwt, url: validatedMediaUrl().toString() });
     }
     throw new GuestError(403, "Guests cannot perform that meeting action.");
   } catch (error) {

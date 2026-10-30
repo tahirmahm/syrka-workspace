@@ -388,10 +388,7 @@ export async function sessionsHandler(
               check(await ctx.db.rpc("session_guest_members", { room: id }))
                 .data || [];
             for (const guest of guests) {
-              const horizon = Math.max(
-                Math.floor(Date.now() / 1000) + 300,
-                Math.floor(Date.parse(guest.expires_at) / 1000),
-              );
+              const horizon = Math.floor(Date.now() / 1000) + 30;
               try {
                 await media().removeParticipant(
                   mediaRoom(ctx, id),
@@ -468,10 +465,7 @@ export async function sessionsHandler(
         }
         try {
           if (guest.status === "removed") {
-            const horizon = Math.max(
-              Math.floor(Date.now() / 1000) + 300,
-              Math.floor(Date.parse(guest.expires_at) / 1000),
-            );
+            const horizon = Math.floor(Date.now() / 1000) + 30;
             await service.removeParticipant(name, identity, {
               revokeTokenTs: BigInt(horizon),
             });
@@ -547,7 +541,7 @@ export async function sessionsHandler(
             await media().removeParticipant(
               mediaRoom(ctx, id),
               `${ctx.source}:${userId}`,
-              { revokeTokenTs: BigInt(Math.floor(Date.now() / 1000) + 3600) },
+              { revokeTokenTs: BigInt(Math.floor(Date.now() / 1000) + 30) },
             );
           else if (patch.can_publish !== undefined)
             await media().updateParticipant(

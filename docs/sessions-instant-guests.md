@@ -71,7 +71,9 @@ changes were made. Campus class-to-dashboard acceptance remains blocked.
 New guests create no Auth users. Expired/removed credentials cannot mint tokens;
 clearing cookies loses the guest identity. Private guest records cascade with their
 meeting on deletion; existing retention is unchanged. Removed participants receive
-an explicit LiveKit token revocation timestamp covering the guest credential life.
+an explicit LiveKit token revocation cutoff 30 seconds ahead of removal (within
+Cloud's required 60-second window), plus blocked credential renewal. Token issuance
+rechecks admission after remote room provisioning.
 Revocation and real media still require actual hosted acceptance evidence. The private invitation rate ledger has explicit deny-all RLS and no client grants.
 The existing leaked-password advisor requires Pro and was not upgraded.
 

@@ -112,7 +112,10 @@ test("approved guest receives a 60-second scoped grant and removal invokes expli
     `syrka-workspace-${room}`,
     `workspace:guest:${guest}`,
   ]);
+  expect(remove.mock.calls[0][2]!.revokeTokenTs).toBeLessThanOrEqual(
+    BigInt(Math.floor(Date.now() / 1000) + 60),
+  );
   expect(remove.mock.calls[0][2]!.revokeTokenTs).toBeGreaterThan(
-    BigInt(Math.floor(Date.now() / 1000) + 300),
+    BigInt(Math.floor(Date.now() / 1000) + 25),
   );
 });
