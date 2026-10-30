@@ -121,6 +121,7 @@ try {
     "Preview SHA matches the requested Git commit",
     root.deployment_sha === expected,
   );
+  console.log("Preview capabilities:", JSON.stringify(root.capabilities));
   check(
     "Preview has real AI, speech and development media capability",
     root.capabilities.ai && root.capabilities.stt && root.capabilities.video,

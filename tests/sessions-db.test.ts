@@ -13,6 +13,11 @@ test("Sessions RLS: admission, consent, publication, immutable originals and quo
     f.endsWith("_sessions_notes.sql"),
   )!;
   await db.exec(readFileSync(`supabase/migrations/${migration}`, "utf8"));
+  const indexes = readdirSync("supabase/migrations").find((f) =>
+    f.endsWith("_sessions_policy_indexes.sql"),
+  );
+  if (indexes)
+    await db.exec(readFileSync(`supabase/migrations/${indexes}`, "utf8"));
   const as = async (id: string) => {
     await db.exec(
       `reset role;set request.jwt.claim.sub='${id}';set role authenticated;`,

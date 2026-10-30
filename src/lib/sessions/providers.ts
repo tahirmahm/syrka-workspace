@@ -2,6 +2,7 @@ import { transcribeRealtimePcm } from "./qwen-realtime";
 import {
   qwenConfiguration,
   qwenReady,
+  qwenConfigurationIssues,
   qwenSpeechReady,
   providerFailure,
   transcribeQwen,
@@ -67,6 +68,7 @@ export function capabilities(): Capabilities {
     missing.push(
       "AI is off until an eligible application API, model, key and free-tier confirmation are configured. Coding Plan subscriptions cannot power this backend.",
     );
+  if (qwen && !ai) missing.push(...qwenConfigurationIssues());
   if (!stt)
     missing.push(
       "Speech recognition requires the configured Qwen model, protected free quota and an unexpired entitlement.",

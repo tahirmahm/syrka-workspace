@@ -36,21 +36,42 @@ export function validQwenEndpoint(baseURL: string) {
     return false;
   }
 }
-export function qwenReady() {
+export function qwenConfigurationIssues(): string[] {
   const config = qwenConfiguration();
-  return Boolean(
-    process.env.SYRKA_FREE_TIER_CONFIRMED === "true" &&
-    Number(process.env.SYRKA_AI_DAILY_BUDGET || 0) === 0 &&
-    config.model === QWEN_TEXT_MODEL &&
-    config.key &&
-    !config.key.startsWith("sk-sp-") &&
-    validQwenEndpoint(config.baseURL) &&
-    process.env.SYRKA_AI_FREE_QUOTA_ONLY_CONFIRMED === "true" &&
-    Date.now() <
+  const issues: string[] = [];
+  if (process.env.SYRKA_FREE_TIER_CONFIRMED !== "true")
+    issues.push("Confirm SYRKA_FREE_TIER_CONFIRMED for Preview.");
+  if (Number(process.env.SYRKA_AI_DAILY_BUDGET || 0) !== 0)
+    issues.push(
+      "Paid AI budgets are disabled; set SYRKA_AI_DAILY_BUDGET to zero.",
+    );
+  if (config.model !== QWEN_TEXT_MODEL)
+    issues.push("Set SYRKA_AI_MODEL to qwen3.8-flash.");
+  if (!config.key)
+    issues.push("SYRKA_AI_API_KEY is unavailable to this deployment.");
+  else if (config.key.startsWith("sk-sp-"))
+    issues.push("Coding Plan keys are not permitted.");
+  if (!validQwenEndpoint(config.baseURL))
+    issues.push(
+      "SYRKA_AI_BASE_URL must be a documented Singapore HTTPS OpenAI-compatible endpoint ending /compatible-mode/v1.",
+    );
+  if (process.env.SYRKA_AI_FREE_QUOTA_ONLY_CONFIRMED !== "true")
+    issues.push("Confirm SYRKA_AI_FREE_QUOTA_ONLY_CONFIRMED for Preview.");
+  if (
+    !(
+      Date.now() <
       Date.parse(
         process.env.SYRKA_FREE_QUOTA_EXPIRES_AT || "2027-01-29T00:00:00Z",
-      ),
-  );
+      )
+    )
+  )
+    issues.push(
+      "The free quota confirmation has expired or has an invalid expiry date.",
+    );
+  return issues;
+}
+export function qwenReady() {
+  return qwenConfigurationIssues().length === 0;
 }
 // Published 3.0 pricing explicitly says no free quota. Never infer eligibility from an API key.
 export function qwenAsrEligible(model: string) {

@@ -2,6 +2,7 @@ import { afterEach, test, expect, vi } from "vitest";
 import {
   qwenConfiguration,
   qwenReady,
+  qwenConfigurationIssues,
   qwenSpeechReady,
   qwenSpeechRequest,
   transcribeQwen,
@@ -217,4 +218,14 @@ test("AI SDK sends strict structured Qwen requests, disables thinking, and never
     /no paid fallback/,
   );
   expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+test("configuration diagnostics identify the failed gate without disclosing credentials", () => {
+  configured();
+  vi.stubEnv("SYRKA_AI_BASE_URL", "https://invalid.example/private-credential");
+  const issues = qwenConfigurationIssues();
+  expect(issues.join(" ")).toContain("SYRKA_AI_BASE_URL");
+  expect(issues.join(" ")).not.toContain("private-credential");
+  expect(issues.join(" ")).not.toContain("sk-unit-test");
+  expect(qwenReady()).toBe(false);
 });

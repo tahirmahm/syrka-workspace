@@ -12,7 +12,8 @@ test("private audio imports require current host ownership and idempotent file j
     .filter(
       (f) =>
         f.endsWith("_sessions_notes.sql") ||
-        f.endsWith("_sessions_audio_jobs.sql"),
+        f.endsWith("_sessions_audio_jobs.sql") ||
+        f.endsWith("_sessions_policy_indexes.sql"),
     )
     .sort())
     await db.exec(readFileSync("supabase/migrations/" + file, "utf8"));
