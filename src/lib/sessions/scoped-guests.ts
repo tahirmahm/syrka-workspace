@@ -4,6 +4,7 @@ import { AccessToken } from "livekit-server-sdk";
 import { z } from "zod";
 import { validateCloudConfig } from "../cloud-config";
 import { capabilities, transcribeAudio } from "./providers";
+import { mediaSources } from "./media-permissions";
 import { languages } from "./model";
 import { media as livekitService, validatedMediaUrl } from "./server";
 
@@ -247,6 +248,7 @@ export async function guestHandler(request: Request) {
         roomJoin: true,
         canSubscribe: true,
         canPublish: member.can_publish,
+        canPublishSources: mediaSources(member.can_share_screen !== false),
         canPublishData: true,
       });
       const jwt = await token.toJwt();

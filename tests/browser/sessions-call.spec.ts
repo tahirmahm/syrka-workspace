@@ -91,7 +91,8 @@ for (const viewport of [
       path: `/tmp/syrka-call-layout-${viewport.width}.png`,
     });
     const box = (await frame.boundingBox())!;
-    expect(box.height).toBeLessThanOrEqual(725);
+    expect(box.height).toBeGreaterThanOrEqual(viewport.height - 2);
+    expect(box.height).toBeLessThanOrEqual(viewport.height + 1);
     expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
     await expect(
       page.getByRole("toolbar", { name: "Meeting controls" }),
@@ -110,6 +111,7 @@ for (const viewport of [
     await expect(
       page.getByRole("button", { name: "Send message", exact: true }),
     ).toBeDisabled();
+    await page.getByLabel("More call options", { exact: true }).click();
     await page
       .getByRole("button", { name: "Toggle transcript and notes" })
       .click();

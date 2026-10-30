@@ -51,7 +51,10 @@ const result = {
   physical_devices_manually_verified: false,
   room: null,
   clients: [],
-  clientKinds: ["account", process.env.SYRKA_QA_GUEST === "true" ? "anonymous_guest" : "account"],
+  clientKinds: [
+    "account",
+    process.env.SYRKA_QA_GUEST === "true" ? "anonymous_guest" : "account",
+  ],
   controls: "NOT_REACHED",
 };
 function check(label, ok) {
@@ -165,12 +168,23 @@ try {
   const id = created.rooms[0].id;
   result.room = id;
   if (guestIdentityClient) {
-    const invitation = await guestIdentityClient.rpc("session_invitation", {room:id});
-    check("Actual account-free guest can read only the opted-in invitation title and host name",
-      !invitation.error && invitation.data?.title === "QA LiveKit two authenticated browsers" &&
-      Object.keys(invitation.data).sort().join(",") === "host_name,title");
-    const privateFiles = await guestIdentityClient.from("office_files").select("id").limit(1);
-    check("Actual guest cannot read Workspace files", !privateFiles.error && privateFiles.data.length === 0);
+    const invitation = await guestIdentityClient.rpc("session_invitation", {
+      room: id,
+    });
+    check(
+      "Actual account-free guest can read only the opted-in invitation title and host name",
+      !invitation.error &&
+        invitation.data?.title === "QA LiveKit two authenticated browsers" &&
+        Object.keys(invitation.data).sort().join(",") === "host_name,title",
+    );
+    const privateFiles = await guestIdentityClient
+      .from("office_files")
+      .select("id")
+      .limit(1);
+    check(
+      "Actual guest cannot read Workspace files",
+      !privateFiles.error && privateFiles.data.length === 0,
+    );
   }
 
   const foreign = await clients[1].post("/workspace/api/sessions", {
@@ -291,9 +305,11 @@ try {
         window.__syrkaMediaPCs = [];
         window.RTCPeerConnection = class extends Native {
           setConfiguration(configuration) {
-            super.setConfiguration(relay
-              ? { ...configuration, iceTransportPolicy: "relay" }
-              : configuration);
+            super.setConfiguration(
+              relay
+                ? { ...configuration, iceTransportPolicy: "relay" }
+                : configuration,
+            );
           }
           constructor(...args) {
             if (relay) args[0] = { ...args[0], iceTransportPolicy: "relay" };
@@ -364,9 +380,10 @@ try {
       bounds &&
         bounds.x >= 0 &&
         bounds.x + bounds.width <= (i ? 375 : 1440) + 1 &&
-        bounds.height <= 725,
+        bounds.height <= (i ? 812 : 900) + 1,
     );
   }
+  await pages[0].getByLabel("More call options", { exact: true }).click();
   await pages[0]
     .getByRole("button", { name: "Copy meeting invitation", exact: true })
     .click();

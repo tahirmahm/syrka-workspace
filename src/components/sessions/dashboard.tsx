@@ -269,7 +269,7 @@ export default function SessionsDashboard({
                 : join;
               if (!value || !/^[-a-f0-9]{36}$/i.test(value))
                 throw Error("Paste a meeting link or UUID.");
-              location.href = meetingLink(source, value);
+              router.push(meetingLink(source, value).replace(/^\/workspace(?=\/)/,""));
             } catch (err) {
               setError(String(err));
             }

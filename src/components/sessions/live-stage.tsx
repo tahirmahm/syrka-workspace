@@ -10,12 +10,14 @@ import {
   useRoomContext,
   useConnectionState,
   useParticipants,
+  useSpeakingParticipants,
   useLocalParticipantPermissions,
   useStartAudio,
   useTracks,
   useChat,
   useLocalParticipant,
 } from "@livekit/components-react";
+import { TrackSource } from "@livekit/protocol";
 import { Track, ConnectionState, DisconnectReason } from "livekit-client";
 import {
   Mic,
@@ -32,11 +34,21 @@ import {
   UserRound,
   MessageSquare,
   Send,
+  PictureInPicture2,
+  Minimize2,
+  Maximize2,
+  Grid2X2,
+  MoreHorizontal,
   X,
 } from "lucide-react";
 import "@livekit/components-styles";
-import { endpoint, sessionHeaders, scopedGuestEndpoint } from "@/lib/sessions/client";
+import {
+  endpoint,
+  sessionHeaders,
+  scopedGuestEndpoint,
+} from "@/lib/sessions/client";
 import { capturePcm } from "@/lib/sessions/pcm";
+import type { CallPresentation } from "./call-context";
 import type { CallDevices } from "./device-preview";
 import type { SessionSource } from "@/lib/sessions/model";
 function SpeechCapture({
@@ -243,7 +255,11 @@ function CallCanvas({
   onError,
   onLeave,
   panelLabel,
+  title,
+  presentation,
 }: {
+  title: string;
+  presentation?: CallPresentation;
   panelLabel: string;
   onLeave: () => void;
   onInvite: () => void;
@@ -251,9 +267,15 @@ function CallCanvas({
   panelOpen: boolean;
   onError: (message: string) => void;
 }) {
+  const frame = useRef<HTMLDivElement>(null);
+  const more = useRef<HTMLDetailsElement>(null);
+  const [layout, setLayout] = useState<"auto" | "grid" | "speaker">("auto");
+  const [pip, setPip] = useState(false);
+  const [sharingFeedback, setSharingFeedback] = useState("");
   const room = useRoomContext();
   const state = useConnectionState();
   const participants = useParticipants();
+  const speakers = useSpeakingParticipants();
   const permissions = useLocalParticipantPermissions();
   const {
     localParticipant,
@@ -265,6 +287,106 @@ function CallCanvas({
     { source: Track.Source.Camera, withPlaceholder: true },
     { source: Track.Source.ScreenShare, withPlaceholder: false },
   ]);
+  const screen = tracks.find((t) => t.source === Track.Source.ScreenShare);
+  const focus =
+    (layout === "auto" && screen) ||
+    tracks.find(
+      (t) =>
+        t.source === Track.Source.Camera &&
+        t.participant.identity === speakers[0]?.identity &&
+        !t.participant.isLocal,
+    ) ||
+    tracks.find((t) => !t.participant.isLocal) ||
+    tracks[0];
+  const shareIdentity = screen
+    ? `${screen.participant.identity}:${screen.publication?.trackSid || "screen"}`
+    : undefined;
+  const lastShare = useRef<string | undefined>(undefined);
+  const layoutBeforeShare = useRef<"auto" | "grid" | "speaker">("auto");
+  useEffect(() => {
+    if (shareIdentity && shareIdentity !== lastShare.current) {
+      if (!lastShare.current) layoutBeforeShare.current = layout;
+      setLayout("auto");
+    } else if (!shareIdentity && lastShare.current)
+      setLayout(layoutBeforeShare.current);
+    lastShare.current = shareIdentity;
+  }, [shareIdentity, layout]);
+  const focused =
+    presentation?.minimized ||
+    layout === "speaker" ||
+    (layout === "auto" && !!screen);
+  const nativePip =
+    typeof document !== "undefined" &&
+    document.pictureInPictureEnabled &&
+    typeof HTMLVideoElement.prototype.requestPictureInPicture === "function";
+  useEffect(() => {
+    const node = frame.current;
+    const update = () =>
+      setPip(
+        !!document.pictureInPictureElement &&
+          !!node?.contains(document.pictureInPictureElement),
+      );
+    node?.addEventListener("enterpictureinpicture", update, true);
+    node?.addEventListener("leavepictureinpicture", update, true);
+    return () => {
+      node?.removeEventListener("enterpictureinpicture", update, true);
+      node?.removeEventListener("leavepictureinpicture", update, true);
+      if (
+        document.pictureInPictureElement &&
+        node?.contains(document.pictureInPictureElement)
+      )
+        void document.exitPictureInPicture().catch(() => {});
+    };
+  }, []);
+  async function pictureInPicture() {
+    if (
+      document.pictureInPictureElement &&
+      frame.current?.contains(document.pictureInPictureElement)
+    ) {
+      await document.exitPictureInPicture().catch(() => {});
+      return;
+    }
+    const tiles = [
+      ...(frame.current?.querySelectorAll<HTMLElement>(
+        "[data-participant-identity]",
+      ) || []),
+    ];
+    const tile =
+      tiles.find(
+        (t) => t.dataset.participantIdentity === focus?.participant.identity,
+      ) || tiles[0];
+    const video = tile?.querySelector<HTMLVideoElement>("video");
+    if (!nativePip || !video || video.readyState < 2) {
+      if (presentation) presentation.onMinimize();
+      onError(
+        nativePip
+          ? "No playable participant video yet. The call stays available in Workspace's floating window."
+          : "Native Picture-in-Picture is unavailable. Use the floating call inside Workspace; it cannot appear over other applications.",
+      );
+      return;
+    }
+    try {
+      await video.requestPictureInPicture();
+    } catch {
+      onError(
+        "Picture-in-Picture could not open. Your browser may require a user gesture or block this feature. The call remains connected.",
+      );
+    }
+  }
+  async function fullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else
+        await (
+          frame.current?.closest<HTMLElement>(".persistent-call") ||
+          frame.current
+        )?.requestFullscreen();
+    } catch {
+      onError(
+        "Fullscreen could not open in this browser. The call remains connected.",
+      );
+    }
+  }
   const { canPlayAudio, mergedProps } = useStartAudio({ props: {} });
   const [people, setPeople] = useState(false);
   const [chat, setChat] = useState(false);
@@ -290,8 +412,23 @@ function CallCanvas({
         await localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
       if (kind === "camera")
         await localParticipant.setCameraEnabled(!isCameraEnabled);
-      if (kind === "screen")
-        await localParticipant.setScreenShareEnabled(!isScreenShareEnabled);
+      if (kind === "screen") {
+        await localParticipant.setScreenShareEnabled(!isScreenShareEnabled, {
+          audio: true,
+          systemAudio: "include",
+          surfaceSwitching: "include",
+          selfBrowserSurface: "exclude",
+          suppressLocalAudioPlayback: true,
+        });
+        if (!isScreenShareEnabled)
+          setSharingFeedback(
+            localParticipant.getTrackPublication(Track.Source.ScreenShareAudio)
+              ?.track
+              ? "Screen and supported presentation audio are shared."
+              : "Screen is shared. This capture has no audio track; your browser or selected surface may not support audio sharing.",
+          );
+        else setSharingFeedback("");
+      }
     } catch (error) {
       onError(
         error instanceof Error && error.name === "NotAllowedError"
@@ -303,8 +440,31 @@ function CallCanvas({
     }
   }
   return (
-    <div className="session-call-frame" data-call-state={state}>
+    <div ref={frame} className="session-call-frame" data-call-state={state}>
       <div className="session-call-status">
+        <strong className="call-meeting-title">{title}</strong>
+        {presentation && (
+          <button
+            className="call-return"
+            aria-label={
+              presentation.minimized ? "Return to call" : "Minimize call"
+            }
+            onClick={
+              presentation.minimized
+                ? presentation.onRestore
+                : presentation.onMinimize
+            }
+          >
+            {presentation.minimized ? (
+              <Maximize2 size={17} />
+            ) : (
+              <Minimize2 size={17} />
+            )}
+            <span>
+              {presentation.minimized ? "Return to call" : "Minimize"}
+            </span>
+          </button>
+        )}
         <span role="status">
           <span className={`call-status-dot ${connected ? "connected" : ""}`} />
           {state === ConnectionState.Connected
@@ -330,13 +490,24 @@ function CallCanvas({
       <div
         className={`session-call-body ${people || chat ? "with-people" : ""}`}
       >
-        <div className="session-call-grid" aria-label="Meeting video stage">
+        <div
+          className={`session-call-grid ${focused ? "call-focused" : ""}`}
+          aria-label="Meeting video stage"
+        >
           {mediaVisible && tracks.length ? (
             tracks.map((track) => (
               <ParticipantTile
                 key={`${track.participant.identity}:${track.source}`}
                 trackRef={track}
+                className={
+                  focused && track === focus
+                    ? "call-primary-tile"
+                    : focused
+                      ? "call-secondary-tile"
+                      : ""
+                }
                 data-session-source={track.source}
+                data-call-local={track.participant.isLocal ? "true" : "false"}
                 data-participant-identity={track.participant.identity}
               >
                 {isTrackReference(track) &&
@@ -481,6 +652,16 @@ function CallCanvas({
           </aside>
         )}
       </div>
+      {sharingFeedback && (
+        <p className="call-share-feedback" role="status">
+          {sharingFeedback}
+        </p>
+      )}
+      {screen && (
+        <p className="call-presenter" role="status">
+          {screen.participant.name || "Participant"} is presenting
+        </p>
+      )}
       {!canPlayAudio && (
         <button {...mergedProps} className="session-start-audio">
           <Volume2 size={16} />
@@ -525,7 +706,15 @@ function CallCanvas({
                 isScreenShareEnabled ? "Stop sharing screen" : "Share screen"
               }
               aria-pressed={isScreenShareEnabled}
-              disabled={working || (!publishing && !isScreenShareEnabled)}
+              disabled={
+                working ||
+                (!isScreenShareEnabled &&
+                  (!publishing ||
+                    (!!permissions?.canPublishSources?.length &&
+                      !permissions.canPublishSources.includes(
+                        TrackSource.SCREEN_SHARE,
+                      ))))
+              }
               onClick={() => void toggle("screen")}
             >
               <MonitorUp size={19} />
@@ -554,18 +743,73 @@ function CallCanvas({
           <MessageSquare size={19} />
           <span>Chat</span>
         </button>
-        <button aria-label="Copy meeting invitation" onClick={onInvite}>
-          <Copy size={19} />
-          <span>Invite</span>
-        </button>
         <button
-          aria-label={panelLabel === "Consent" ? "Toggle transcription consent" : "Toggle transcript and notes"}
-          aria-expanded={panelOpen}
-          onClick={onPanel}
+          aria-label={pip ? "Exit Picture-in-Picture" : "Picture-in-Picture"}
+          aria-pressed={pip}
+          onClick={() => void pictureInPicture()}
         >
-          <PanelRight size={19} />
-          <span>{panelLabel}</span>
+          <PictureInPicture2 size={19} />
+          <span>PiP</span>
         </button>
+        <details ref={more} className="call-more">
+          <summary aria-label="More call options">
+            <MoreHorizontal size={19} />
+            <span>More</span>
+          </summary>
+          <div
+            onClick={() => {
+              if (more.current) more.current.open = false;
+            }}
+          >
+            <button aria-label="Copy meeting invitation" onClick={onInvite}>
+              <Copy size={17} />
+              Copy invitation
+            </button>
+            <button
+              aria-label={
+                panelLabel === "Consent"
+                  ? "Toggle transcription consent"
+                  : "Toggle transcript and notes"
+              }
+              aria-expanded={panelOpen}
+              onClick={onPanel}
+            >
+              <PanelRight size={17} />
+              {panelLabel === "Consent"
+                ? "Transcription consent"
+                : "Notes & host controls"}
+            </button>
+            <button
+              aria-label={
+                layout === "grid" ? "Focus speaker" : "Show grid view"
+              }
+              onClick={() => setLayout(layout === "grid" ? "speaker" : "grid")}
+            >
+              <Grid2X2 size={17} />
+              {layout === "grid" ? "Focus speaker" : "Grid view"}
+            </button>
+            {screen && (
+              <button onClick={() => setLayout("auto")}>
+                <MonitorUp size={17} />
+                Focus presentation
+              </button>
+            )}
+            {typeof document !== "undefined" &&
+              typeof document.documentElement.requestFullscreen ===
+                "function" && (
+                <button onClick={() => void fullscreen()}>
+                  <Maximize2 size={17} />
+                  Full Screen
+                </button>
+              )}
+            {presentation && (
+              <button onClick={presentation.onMinimize}>
+                <Minimize2 size={17} />
+                Minimize to Workspace
+              </button>
+            )}
+          </div>
+        </details>
         <button
           className="session-call-leave"
           aria-label="Leave meeting"
@@ -615,6 +859,8 @@ function CallCanvas({
 export default function LiveStage({
   token,
   url,
+  title = "Syrka Session",
+  presentation,
   source,
   roomId,
   transcribing,
@@ -630,6 +876,8 @@ export default function LiveStage({
   panelLabel = "Notes",
   guestAccess = false,
 }: {
+  title?: string;
+  presentation?: CallPresentation;
   guestAccess?: boolean;
   devices?: CallDevices;
   panelLabel?: string;
@@ -647,10 +895,13 @@ export default function LiveStage({
   speechLanguages?: string[];
   speechFormat?: "pcm" | "encoded";
 }) {
-  const captureOptions = useMemo(() => ({
-    audioCaptureDefaults: { deviceId: devices.microphone },
-    videoCaptureDefaults: { deviceId: devices.camera },
-  }), [devices.microphone, devices.camera]);
+  const captureOptions = useMemo(
+    () => ({
+      audioCaptureDefaults: { deviceId: devices.microphone },
+      videoCaptureDefaults: { deviceId: devices.camera },
+    }),
+    [devices.microphone, devices.camera],
+  );
   const [language, setLanguage] = useState("en");
   const [error, setError] = useState("");
   const handleConnectionError = useCallback(
@@ -698,6 +949,8 @@ export default function LiveStage({
           onError={handleConnectionError}
         >
           <CallCanvas
+            title={title}
+            presentation={presentation}
             panelLabel={panelLabel}
             onLeave={() =>
               onDisconnect(

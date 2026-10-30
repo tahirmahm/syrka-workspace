@@ -334,6 +334,7 @@ try {
     .getByRole("button", { name: "Start call", exact: true })
     .click();
   await pages[0].getByRole("toolbar", { name: "Meeting controls" }).waitFor();
+  await pages[0].getByLabel("More call options", { exact: true }).click();
   await pages[0]
     .getByRole("button", { name: "Copy meeting invitation", exact: true })
     .click();
@@ -390,6 +391,7 @@ try {
     "Authenticated host sees scoped waiting identity",
     member?.guest_identity && member.status === "waiting",
   );
+  await pages[0].getByLabel("More call options", { exact: true }).click();
   await pages[0]
     .getByRole("button", { name: "Toggle transcript and notes", exact: true })
     .click();
@@ -428,6 +430,51 @@ try {
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   );
+  if (process.env.SYRKA_QA_PERSISTENCE === "true") {
+    for (const [index, page] of pages.entries()) {
+      await page.evaluate(() => {
+        window.__syrkaPersistentFrame = document.querySelector(
+          ".session-call-frame",
+        );
+      });
+      await page
+        .getByRole("button", { name: "Minimize call", exact: true })
+        .click();
+      await page.locator('[data-persistent-call="mini"]').waitFor();
+      check(
+        `Real-service browser ${index + 1} minimizes without replacing its call subtree`,
+        await page.evaluate(
+          () =>
+            document.querySelector(".session-call-frame") ===
+            window.__syrkaPersistentFrame,
+        ),
+      );
+      await page
+        .getByRole("button", { name: "Return to call", exact: true })
+        .click();
+      await page.locator('[data-persistent-call="full"]').waitFor();
+      check(
+        `Real-service browser ${index + 1} returns without replacing its call subtree`,
+        await page.evaluate(
+          () =>
+            document.querySelector(".session-call-frame") ===
+            window.__syrkaPersistentFrame,
+        ),
+      );
+    }
+    await manage({ can_share_screen: false });
+    const restricted = await guestApi({ action: "token", roomId });
+    assert(restricted.response.ok());
+    const permissions = JSON.parse(
+      Buffer.from(restricted.body.token.split(".")[1], "base64url").toString(),
+    );
+    check(
+      "Host presentation restriction reaches actual guest JWT while preserving microphone and camera",
+      JSON.stringify(permissions.video.canPublishSources) ===
+        JSON.stringify(["camera", "microphone"]),
+    );
+    await manage({ can_share_screen: true });
+  }
   const connected = await Promise.allSettled(
     pages.map((p) =>
       p.locator('[data-call-state="connected"]').waitFor({

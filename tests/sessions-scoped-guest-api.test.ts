@@ -103,6 +103,12 @@ test("approved guest receives a 60-second scoped grant and removal invokes expli
   ).verify(b.token);
   expect(claims.sub).toBe(`workspace:guest:${guest}`);
   expect(claims.video?.room).toBe(`syrka-workspace-${room}`);
+  expect(claims.video?.canPublishSources).toEqual([
+    "camera",
+    "microphone",
+    "screen_share",
+    "screen_share_audio",
+  ]);
   expect((claims.exp || 0) - (claims.nbf || 0)).toBeLessThanOrEqual(60);
   const remove = vi
     .spyOn(RoomServiceClient.prototype, "removeParticipant")

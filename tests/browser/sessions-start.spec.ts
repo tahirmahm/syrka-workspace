@@ -194,6 +194,7 @@ test("account-free guest requests admission, waits, then joins with a meeting-on
   });
   await expect(page.locator(".session-call-frame")).toBeVisible();
   expect(calls.token).toBe(1);
+  await page.getByLabel("More call options", { exact: true }).click();
   await page
     .getByRole("button", { name: "Toggle transcription consent", exact: true })
     .click();
@@ -362,4 +363,157 @@ test("mobile guest meeting has full-width content and readable touch-sized error
       .getByRole("navigation", { name: "Mobile Workspace navigation" })
       .getByRole("link", { name: "Sessions", exact: true }),
   ).toBeVisible();
+});
+
+test("one persistent call DOM survives Home, document editing, Back and return without a second token (UI fixture, not RTP)", async ({
+  page,
+}) => {
+  const calls = await fixture(page);
+  await page.route("**/rest/v1/office_files**", async (route) =>
+    route.fulfill({ json: [] }),
+  );
+  await page.addInitScript(
+    (value) =>
+      localStorage.setItem(
+        "sb-zguejzlseldovdssiumn-auth-token",
+        JSON.stringify(value),
+      ),
+    session(host),
+  );
+  await page.goto("/workspace/");
+  await page.getByRole("link", { name: "Sessions", exact: true }).click();
+  await page.getByRole("button", { name: "Start call", exact: true }).click();
+  await expect(page.locator('[data-persistent-call="full"]')).toBeVisible();
+  await expect(page.locator(".session-call-frame")).toBeVisible();
+  await page.evaluate(() => {
+    (window as unknown as { __callNode: Element | null }).__callNode =
+      document.querySelector(".session-call-frame");
+  });
+  await page.goBack();
+  await expect(page.locator('[data-persistent-call="mini"]')).toBeVisible();
+  await page
+    .getByRole("button", { name: "Return to call", exact: true })
+    .click();
+  await expect(page.locator('[data-persistent-call="full"]')).toBeVisible();
+  await page
+    .getByRole("button", { name: "Minimize call", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/workspace\/?$/);
+  await expect(page.locator('[data-persistent-call="mini"]')).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        document.querySelector(".session-call-frame") ===
+        (window as unknown as { __callNode: Element }).__callNode,
+    ),
+  ).toBe(true);
+  expect(calls.token).toBe(1);
+  await page.getByRole("button", { name: "Create new", exact: true }).click();
+  await expect(page.locator(".tiptap")).toBeVisible();
+  await expect(page.locator('[data-persistent-call="mini"]')).toBeVisible();
+  await page
+    .getByRole("button", { name: "Return to call", exact: true })
+    .click();
+  expect(calls.token).toBe(1);
+  await page
+    .getByRole("button", { name: "Leave meeting", exact: true })
+    .click();
+  await expect(page.locator(".session-call-frame")).toHaveCount(0);
+});
+
+test("unsupported PiP falls back to the same floating call; keyboard repositioning and explicit leave work", async ({
+  page,
+}) => {
+  const calls = await fixture(page);
+  await page.addInitScript((value) => {
+    localStorage.setItem(
+      "sb-zguejzlseldovdssiumn-auth-token",
+      JSON.stringify(value),
+    );
+    Object.defineProperty(document, "pictureInPictureEnabled", {
+      get: () => false,
+    });
+  }, session(host));
+  await page.goto(`/workspace/sessions/meeting/${id}?start=1`);
+  await expect(page.locator('[data-persistent-call="full"]')).toBeVisible();
+  await page
+    .getByRole("button", { name: "Picture-in-Picture", exact: true })
+    .click();
+  await expect(page.locator('[data-persistent-call="mini"]')).toBeVisible();
+  const handle = page.getByRole("button", {
+    name: "Move call window",
+    exact: true,
+  });
+  const before = await handle.boundingBox();
+  await handle.focus();
+  await handle.press("ArrowLeft");
+  expect((await handle.boundingBox())!.x).toBeLessThan(before!.x);
+  expect(calls.token).toBe(1);
+  await page
+    .getByRole("button", { name: "Leave meeting", exact: true })
+    .click();
+  await expect(page.locator("[data-persistent-call]")).toHaveCount(0);
+});
+
+test("server removal still terminates a minimized call while Workspace is open", async ({
+  page,
+}) => {
+  const calls = await fixture(page);
+  await page.addInitScript(
+    (value) =>
+      localStorage.setItem(
+        "sb-zguejzlseldovdssiumn-auth-token",
+        JSON.stringify(value),
+      ),
+    session(host),
+  );
+  await page.goto(`/workspace/sessions/meeting/${id}?start=1`);
+  await expect(page.locator(".session-call-frame")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Minimize call", exact: true })
+    .click();
+  await expect(page.locator('[data-persistent-call="mini"]')).toBeVisible();
+  calls.removed = true;
+  await expect(page.locator("[data-persistent-call]")).toHaveCount(0, {
+    timeout: 12000,
+  });
+  expect(calls.token).toBe(1);
+});
+
+test("explicit browser fullscreen exits on minimize without replacing the call (Chromium UI fixture)", async ({
+  page,
+}) => {
+  const calls = await fixture(page);
+  await page.addInitScript(
+    (value) =>
+      localStorage.setItem(
+        "sb-zguejzlseldovdssiumn-auth-token",
+        JSON.stringify(value),
+      ),
+    session(host),
+  );
+  await page.goto(`/workspace/sessions/meeting/${id}?start=1`);
+  await expect(page.locator(".session-call-frame")).toBeVisible();
+  await page.getByLabel("More call options", { exact: true }).click();
+  await page.getByRole("button", { name: "Full Screen", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.fullscreenElement?.classList.contains("persistent-call") ??
+          false,
+      ),
+    )
+    .toBe(true);
+  await page
+    .getByRole("button", { name: "Minimize call", exact: true })
+    .click();
+  await expect(page.locator('[data-persistent-call="mini"]')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => document.fullscreenElement === null))
+    .toBe(true);
+  expect(calls.token).toBe(1);
+  await page
+    .getByRole("button", { name: "Leave meeting", exact: true })
+    .click();
 });

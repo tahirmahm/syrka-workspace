@@ -17,6 +17,7 @@ test("scoped guests use no Auth identity and cannot bypass admission, room scope
     "_sessions_guest_admission.sql",
     "_sessions_guest_metadata_privacy.sql",
     "_sessions_scoped_guests.sql",
+    "_sessions_screen_permissions.sql",
   ]) {
     const f = readdirSync("supabase/migrations").find((f) =>
       f.endsWith(suffix),
@@ -73,6 +74,20 @@ test("scoped guests use no Auth identity and cannot bypass admission, room scope
   await as(owner);
   await db.exec(
     `select session_guest_manage('${room}','${id}','{"status":"approved"}');update session_rooms set transcribing=true,status='live' where id='${room}';select session_set_consent('${room}',true)`,
+  );
+  const restricted = await db.query<{ g: { can_share_screen: boolean } }>(
+    `select session_guest_manage('${room}','${id}','{"can_share_screen":false}')g`,
+  );
+  expect(restricted.rows[0].g.can_share_screen).toBe(false);
+  await as(other);
+  await expect(
+    db.query(
+      `select session_guest_manage('${room}','${id}','{"can_share_screen":true}')`,
+    ),
+  ).rejects.toThrow();
+  await as(owner);
+  await db.exec(
+    `select session_guest_manage('${room}','${id}','{"can_share_screen":true}')`,
   );
   await as();
   const snap = (

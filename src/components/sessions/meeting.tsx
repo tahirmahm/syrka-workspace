@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { CallPresentation } from "./call-context";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -44,11 +45,15 @@ export default function Meeting({
   source = "workspace",
   notesView = false,
   autoStart = false,
+  onActiveChange,
+  callPresentation,
 }: {
   id: string;
   source?: SessionSource;
   notesView?: boolean;
   autoStart?: boolean;
+  onActiveChange?: (active: boolean) => void;
+  callPresentation?: CallPresentation;
 }) {
   const router = useRouter();
   const [devices, setDevices] = useState<CallDevices>({});
@@ -97,6 +102,9 @@ export default function Meeting({
   const [token, setToken] = useState<{ token: string; url: string } | null>(
     null,
   );
+  useEffect(() => {
+    onActiveChange?.(!!token);
+  }, [token, onActiveChange]);
   const activeCall = useRef(token);
   activeCall.current = token;
   const [editingCard, setEditingCard] = useState<string | null>(null);
@@ -695,6 +703,8 @@ export default function Meeting({
             <div className="session-stage-column">
               {token ? (
                 <LiveStage
+                  title={snapshot.room.title}
+                  presentation={callPresentation}
                   onConnected={() => {
                     if (host && snapshot.room.status === "scheduled")
                       void action({
@@ -952,6 +962,26 @@ export default function Meeting({
                         </h3>
                         {snapshot.members.map((member) => (
                           <div className="session-member" key={member.user_id}>
+                            {member.status === "approved" &&
+                              member.user_id !== snapshot.room.owner_id && (
+                                <label>
+                                  <input
+                                    type="checkbox"
+                                    checked={member.can_share_screen !== false}
+                                    onChange={(e) =>
+                                      void action({
+                                        action: "member_update",
+                                        user_id: member.user_id,
+                                        guest_identity: !!member.guest_identity,
+                                        patch: {
+                                          can_share_screen: e.target.checked,
+                                        },
+                                      })
+                                    }
+                                  />
+                                  Allow screen sharing for {member.display_name}
+                                </label>
+                              )}
                             <span>
                               {member.display_name}
                               {member.is_guest ? " (guest)" : ""} ·{" "}

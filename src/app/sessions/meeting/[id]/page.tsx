@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
-import { ToolsShell } from "@/components/tools/shell";
-import Meeting from "@/components/sessions/meeting";
+import MeetingRoute from "@/components/sessions/meeting-route";
 export const metadata = { title: "Syrka Session — Private meeting" };
 export default async function Session({
   params,
@@ -16,14 +15,12 @@ export default async function Session({
   )
     notFound();
   return (
-    <ToolsShell application="sessions" cloudData title="Session">
-      <Meeting
-        key={id}
-        id={id}
-        autoStart={query.start === "1"}
-        source={query.source === "campus" ? "campus" : "workspace"}
-        notesView={query.view === "notes"}
-      />
-    </ToolsShell>
+    <MeetingRoute
+      key={id}
+      id={id}
+      autoStart={query.start === "1"}
+      source={query.source === "campus" ? "campus" : "workspace"}
+      notesView={query.view === "notes"}
+    />
   );
 }

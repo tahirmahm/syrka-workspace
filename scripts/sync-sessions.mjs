@@ -10,6 +10,7 @@ const names = [
   "model.ts",
   "providers.ts",
   "server.ts",
+  "media-permissions.ts",
   "transcripts.ts",
   "qwen.ts",
   "qwen-realtime.ts",

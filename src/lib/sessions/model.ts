@@ -50,6 +50,7 @@ export type Member = {
   status: "waiting" | "approved" | "removed";
   consent: boolean;
   can_publish: boolean;
+  can_share_screen?: boolean;
   is_guest?: boolean;
   guest_identity?: boolean;
   expires_at?: string;

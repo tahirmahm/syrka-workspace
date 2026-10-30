@@ -7,6 +7,7 @@ import {
 import { providerFailure } from "./qwen";
 import { createHash, randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { mediaSources } from "./media-permissions";
 import { AccessToken, RoomServiceClient, TrackType } from "livekit-server-sdk";
 import { z } from "zod";
 import {
@@ -355,6 +356,7 @@ export async function sessionsHandler(
         roomJoin: true,
         canSubscribe: true,
         canPublish: member.can_publish,
+        canPublishSources: mediaSources(member.can_share_screen !== false),
         canPublishData: true,
       });
       return json({
@@ -427,6 +429,7 @@ export async function sessionsHandler(
               .object({
                 status: z.enum(["approved", "removed"]).optional(),
                 can_publish: z.boolean().optional(),
+                can_share_screen: z.boolean().optional(),
               })
               .strict()
               .parse(input.patch)
@@ -469,10 +472,16 @@ export async function sessionsHandler(
             await service.removeParticipant(name, identity, {
               revokeTokenTs: BigInt(horizon),
             });
-          } else if (patch.can_publish !== undefined)
+          } else if (
+            patch.can_publish !== undefined ||
+            patch.can_share_screen !== undefined
+          )
             await service.updateParticipant(name, identity, {
               permission: {
                 canPublish: guest.can_publish,
+                canPublishSources: mediaSources(
+                  guest.can_share_screen !== false,
+                ),
                 canSubscribe: true,
                 canPublishData: true,
               },
@@ -532,9 +541,25 @@ export async function sessionsHandler(
         .object({
           status: z.enum(["approved", "removed"]).optional(),
           can_publish: z.boolean().optional(),
+          can_share_screen: z.boolean().optional(),
         })
         .strict()
         .parse(input.patch);
+      const member = check(
+        await ctx.db
+          .from("session_members")
+          .select("*")
+          .eq("room_id", id)
+          .eq("user_id", userId)
+          .single(),
+      ).data;
+      check(
+        await ctx.db
+          .from("session_members")
+          .update(patch)
+          .eq("room_id", id)
+          .eq("user_id", userId),
+      );
       if (capabilities().video) {
         try {
           if (patch.status === "removed")
@@ -543,13 +568,20 @@ export async function sessionsHandler(
               `${ctx.source}:${userId}`,
               { revokeTokenTs: BigInt(Math.floor(Date.now() / 1000) + 30) },
             );
-          else if (patch.can_publish !== undefined)
+          else if (
+            patch.can_publish !== undefined ||
+            patch.can_share_screen !== undefined
+          )
             await media().updateParticipant(
               mediaRoom(ctx, id),
               `${ctx.source}:${userId}`,
               {
                 permission: {
-                  canPublish: patch.can_publish,
+                  canPublish: patch.can_publish ?? member.can_publish,
+                  canPublishSources: mediaSources(
+                    (patch.can_share_screen ?? member.can_share_screen) !==
+                      false,
+                  ),
                   canSubscribe: true,
                   canPublishData: true,
                 },
@@ -563,13 +595,6 @@ export async function sessionsHandler(
             );
         }
       }
-      check(
-        await ctx.db
-          .from("session_members")
-          .update(patch)
-          .eq("room_id", id)
-          .eq("user_id", userId),
-      );
       return json({ ok: true });
     }
     if (action === "import") {
