@@ -18,9 +18,11 @@ import { ToolPictogram } from "./pictogram";
 export function ToolsShell({
   children,
   title,
+  cloudData = false,
 }: {
   children: React.ReactNode;
   title?: string;
+  cloudData?: boolean;
 }) {
   return (
     <div className="office">
@@ -112,7 +114,11 @@ export function ToolsShell({
               <Brand compact />
             </span>
             <span>A calmer place to create.</span>
-            <span>Your files stay on your device.</span>
+            <span>
+              {cloudData
+                ? "Cloud sessions use private account storage."
+                : "Your files stay on your device."}
+            </span>
           </footer>
         </main>
       </div>

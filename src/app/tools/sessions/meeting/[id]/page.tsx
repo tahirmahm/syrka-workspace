@@ -16,7 +16,7 @@ export default async function Session({
   )
     notFound();
   return (
-    <ToolsShell title="Session">
+    <ToolsShell cloudData title="Session">
       <Meeting
         id={id}
         source={query.source === "campus" ? "campus" : "workspace"}

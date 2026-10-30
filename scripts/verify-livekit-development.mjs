@@ -23,7 +23,36 @@ let browser,
   server,
   created = false;
 let pages = [];
-const watchdog = setTimeout(() => {
+const watchdog = setTimeout(async () => {
+  for (const page of pages)
+    console.error(
+      "Bounded probe phase:",
+      JSON.stringify(
+        await page
+          .evaluate(async () => ({
+            ...window.probe,
+            pcs: await Promise.all(
+              (window.probePcs || []).map(async (pc) => ({
+                state: pc.connectionState,
+                ice: pc.iceConnectionState,
+                gathering: pc.iceGatheringState,
+                candidates: [...(await pc.getStats())]
+                  .map(([, s]) => s)
+                  .filter((s) =>
+                    ["local-candidate", "remote-candidate"].includes(s.type),
+                  )
+                  .map((s) => ({
+                    type: s.type,
+                    candidateType: s.candidateType,
+                    protocol: s.protocol,
+                    relayProtocol: s.relayProtocol,
+                  })),
+              })),
+            ),
+          }))
+          .catch(() => null),
+      ),
+    );
   console.error("LiveKit probe exceeded the bounded network deadline.");
   void browser?.close();
 }, 60000);
@@ -61,6 +90,9 @@ try {
       "--use-fake-device-for-media-stream",
       "--use-fake-ui-for-media-stream",
       "--autoplay-policy=no-user-gesture-required",
+      ...(process.env.SYRKA_LIVEKIT_RELAY_TEST === "true"
+        ? ["--force-webrtc-ip-handling-policy=disable_non_proxied_udp"]
+        : []),
     ],
     proxy: process.env.HTTPS_PROXY
       ? { server: process.env.HTTPS_PROXY, bypass: "127.0.0.1,localhost" }
@@ -72,6 +104,20 @@ try {
     ),
   );
   pages = await Promise.all(contexts.map((c) => c.newPage()));
+  for (const page of pages) {
+    page.on("requestfailed", (req) => {
+      const u = new URL(req.url());
+      console.error(
+        "Network failure:",
+        u.hostname + u.pathname,
+        req.failure()?.errorText,
+      );
+    });
+    page.on("websocket", (socket) => {
+      const u = new URL(socket.url());
+      console.log("WebSocket requested:", u.hostname + u.pathname);
+    });
+  }
   await Promise.all(
     pages.map(async (page, index) => {
       const token = new AccessToken(
@@ -88,7 +134,15 @@ try {
       });
       await page.goto(address);
       await page.evaluate(
-        async ({ url, token }) => {
+        async ({ url, token, relay }) => {
+          window.probePcs = [];
+          const NativePC = window.RTCPeerConnection;
+          window.RTCPeerConnection = class extends NativePC {
+            constructor(...args) {
+              super(...args);
+              window.probePcs.push(this);
+            }
+          };
           const { Room, RoomEvent } = window.LivekitClient;
           window.probe = {
             state: "connecting",
@@ -102,6 +156,7 @@ try {
           try {
             await room.connect(url, token, {
               maxRetries: 0,
+              ...(relay ? { rtcConfig: { iceTransportPolicy: "relay" } } : {}),
               peerConnectionTimeout: 15000,
               websocketTimeout: 15000,
             });
@@ -118,7 +173,11 @@ try {
               .slice(0, 160);
           }
         },
-        { url: config.LIVEKIT_URL, token: await token.toJwt() },
+        {
+          url: config.LIVEKIT_URL,
+          token: await token.toJwt(),
+          relay: process.env.SYRKA_LIVEKIT_RELAY_TEST === "true",
+        },
       );
     }),
   );

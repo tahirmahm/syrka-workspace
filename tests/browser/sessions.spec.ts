@@ -82,7 +82,8 @@ test("schedule, import, search and timestamped download persist locally", async 
   await page
     .getByLabel("Transcript import text")
     .fill(
-      "WEBVTT\n\n00:01:20.000 --> 00:01:24.000\nA source-grounded test passage.",
+      "WEBVTT\n\n00:01:20.000 --> 00:01:24.000\nA source-grounded test passage." +
+        String.fromCodePoint(0x1f642),
     );
   await page.getByRole("checkbox", { name: /permission to import/ }).check();
   await page
@@ -92,6 +93,9 @@ test("schedule, import, search and timestamped download persist locally", async 
   await page.reload();
   await expect(page.locator(".session-transcript")).toContainText(
     "source-grounded test passage",
+  );
+  await expect(page.locator(".session-transcript")).toContainText(
+    String.fromCodePoint(0x1f642),
   );
   const pending = page.waitForEvent("download");
   await page.getByRole("button", { name: "SRT", exact: true }).click();

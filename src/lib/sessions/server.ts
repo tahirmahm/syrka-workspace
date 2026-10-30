@@ -78,10 +78,29 @@ export function isMediaMissing(error: unknown) {
     (!e.status && /not[ _-]?found|does not exist/i.test(e.message || ""))
   );
 }
+function validatedMediaUrl() {
+  let url: URL;
+  try {
+    url = new URL(process.env.LIVEKIT_URL || "");
+  } catch {
+    throw new HttpError(503, "LiveKit server URL is invalid.");
+  }
+  if (url.username || url.password || url.search || url.hash)
+    throw new HttpError(
+      503,
+      "LiveKit server URL must not contain credentials, queries or fragments.",
+    );
+  if (
+    !["wss:", "https:"].includes(url.protocol) &&
+    process.env.NODE_ENV === "production"
+  )
+    throw new HttpError(503, "LiveKit requires a secure URL.");
+  return url;
+}
 function media() {
   if (!capabilities().video)
     throw new HttpError(503, "LiveKit is not configured.");
-  const url = new URL(process.env.LIVEKIT_URL!);
+  const url = validatedMediaUrl();
   if (
     !["wss:", "https:"].includes(url.protocol) &&
     process.env.NODE_ENV === "production"
@@ -133,7 +152,24 @@ export async function sessionsHandler(
           user_id: ctx.user.id,
         });
       }
-      const room = await roomFor(ctx, id);
+      let room: SessionRoom;
+      try {
+        room = await roomFor(ctx, id);
+      } catch (error) {
+        if (error instanceof HttpError && error.status === 404) {
+          const own = check(
+            await ctx.db
+              .from("session_members")
+              .select("status")
+              .eq("room_id", id)
+              .eq("user_id", ctx.user.id)
+              .maybeSingle(),
+          ).data;
+          if (own?.status === "waiting")
+            return json({ admission: "waiting", user_id: ctx.user.id });
+        }
+        throw error;
+      }
       const [members, segments, note, jobs, cards, annotations] =
         await Promise.all([
           ctx.db.from("session_members").select("*").eq("room_id", id),
@@ -289,7 +325,7 @@ export async function sessionsHandler(
         {
           identity: `${ctx.source}:${ctx.user.id}`,
           name: member.display_name,
-          ttl: 60,
+          ttl: 300,
         },
       );
       token.addGrant({
@@ -299,7 +335,10 @@ export async function sessionsHandler(
         canPublish: member.can_publish,
         canPublishData: true,
       });
-      return json({ token: await token.toJwt(), url: process.env.LIVEKIT_URL });
+      return json({
+        token: await token.toJwt(),
+        url: validatedMediaUrl().toString(),
+      });
     }
     if (action === "host_update") {
       host(ctx, room);

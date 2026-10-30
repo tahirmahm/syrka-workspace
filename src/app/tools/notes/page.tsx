@@ -8,7 +8,7 @@ export default async function Notes({
 }) {
   const { source } = await searchParams;
   return (
-    <ToolsShell title="Notes">
+    <ToolsShell cloudData title="Notes">
       <SessionsDashboard
         mode="notes"
         source={source === "campus" ? "campus" : "workspace"}
