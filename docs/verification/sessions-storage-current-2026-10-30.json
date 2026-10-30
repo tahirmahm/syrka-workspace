@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "checks": [
+    "Owner can upload private audio",
+    "Owner can read original private audio",
+    "Other authenticated user cannot download private audio",
+    "Private QA audio fixture removed"
+  ],
+  "checked_at": "2026-10-30T18:17:33.484Z"
+}

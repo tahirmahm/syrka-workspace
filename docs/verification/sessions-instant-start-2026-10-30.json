@@ -1,0 +1,13 @@
+{
+  "status": "PASS_INSTANT_CREATION_AND_CONNECTION_REQUEST",
+  "sha": "438438438e7b6f71eaf6701f68abff9fb9cfa66f",
+  "checks": [
+    "Actual Start call created a hosted owned meeting and approved host",
+    "Actual Start call cleared stale demo selection and mounted the real LiveKit connection",
+    "Leave cancelled the actual connection"
+  ],
+  "media_verified": false,
+  "signalingFrames": 9,
+  "callState": "connecting",
+  "cleanup": "Only the exact own QA-created instant meeting removed"
+}

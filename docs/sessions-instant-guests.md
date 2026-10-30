@@ -81,3 +81,51 @@ Mocked browser signaling is explicitly not real media acceptance.
 Campus lint, strict TypeScript, 19 unit/database tests, build, native WebSocket smoke
 and both setup/mobile browser tests passed. Shared helper updates retain Campus
 course authorization and do not apply the Workspace guest migration to Campus.
+
+## Hosted acceptance on the updated source
+
+Application source `438438438e7b6f71eaf6701f68abff9fb9cfa66f` is READY at
+https://syrka-workspace-jxofh8uia-tahirmahmood439wel-gmailcoms-projects.vercel.app/workspace/sessions.
+Campus source `975563cf070dc3b9b646eb33c656459a888028f7` is READY at
+https://syrka-campus-e4jg8dn0q-tahirmahmood439wel-gmailcoms-projects.vercel.app/cam.
+
+**Verified against actual Workspace Preview:** clicking Start call in a normal
+QA account while a stale demo flag was present created a hosted owned meeting,
+restored the approved host membership, cleared demo mode, minted a real token and
+mounted the actual LiveKit SDK. Nine real signaling frames arrived. The call stayed
+connecting; this does not prove media delivery. Leave cancelled the connection.
+The exact QA-created instant meeting was ended and deleted.
+
+**Verified with actual Qwen:** filetrans recognized fictional uploaded WAV audio
+with timestamps; qwen3.8-flash generated and saved structured notes; an authenticated
+browser reopened them. Realtime-model PCM batches produced persisted own-track
+transcripts and another generated note. No processing before all consent, revocation,
+user isolation and direct private Storage isolation passed. Uploaded speaker identities
+remain unknown. This provider/audio test is separate from a live-call-to-notes test.
+
+**Actual two-client media NOT verified:** two distinct permanent Auth contexts passed
+admission, signed grants, host privilege denials, invitations and viewport checks.
+Both default and enforced-relay attempts received real signaling but failed ICE with
+701 and no audio/video RTP or playback. Both left and closed peer connections.
+The runner has an HTTP proxy and no general TCP grants/VPN. Observed failure is at
+ICE/media reachability; exact behavior on ordinary user networks is not established.
+Microphone/video exchange, screen-share delivery, connected remote mute/removal,
+guest rejoin and post-connect recovery have not passed real media acceptance.
+
+**Actual account-free guest NOT verified:** the real Supabase Auth request returned
+HTTP 422 / `anonymous_provider_disabled`. Connected Supabase tools have no Auth-config
+mutation; CLI has no management access token. Qwen keys cannot change Supabase Auth.
+Anonymous Sign-ins must be enabled in the existing Workspace project before the
+hosted guest test can proceed. RLS, UI and API guest tests pass locally; that is not
+a substitute for hosted guest authentication. No insecure guest bypass was added.
+
+**Campus NOT verified:** connector access remains denied for the existing project.
+No Campus migration or fictional class records were substituted. Physical iPhone,
+Android, microphone, camera and speaker testing is unavailable and not claimed.
+
+All probes used authorized Vercel Preview access, not a public production release.
+Both draft PRs remain unmerged. Production DNS, main branches, credentials, paid
+fallback and paid services were not changed. Sanitized machine-readable evidence
+is committed under `docs/verification/sessions-*-2026-10-30.json`. Only own QA meeting
+records and audio fixtures were removed. Later report-only commits do not change
+application code; the exact exercised application SHA above is retained for audit.
