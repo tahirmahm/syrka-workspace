@@ -171,3 +171,31 @@ test("pending admission survives reload without displaying private meeting detai
     page.getByRole("button", { name: "Join meeting", exact: true }),
   ).toHaveCount(0);
 });
+test("loss of application authorization cancels the call and clears private meeting content", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.getByRole("button", { name: "Start / join meeting" }).click();
+  await expect(page.locator(".session-call-frame")).toBeVisible();
+  await page.unroute("**/workspace/api/sessions**");
+  await page.route("**/workspace/api/sessions**", (route) =>
+    route.fulfill({
+      status: 401,
+      json: { error: "Your Workspace session expired. Sign in again." },
+    }),
+  );
+  await expect(page.locator(".session-call-frame")).toHaveCount(0, {
+    timeout: 10000,
+  });
+  await expect(
+    page.getByRole("heading", {
+      name: "Layout verification fixture",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", {
+      name: "Sign in without leaving this invitation",
+    }),
+  ).toBeVisible();
+});

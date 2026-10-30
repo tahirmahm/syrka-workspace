@@ -92,7 +92,7 @@ test("waiting, removed and ended sessions cannot mint media tokens", async () =>
   expect((await mint("removed")).status).toBe(403);
   expect((await mint("approved", true, true)).status).toBe(409);
 });
-test("pending guests can reload admission status without receiving private room content", async () => {
+test.each([false, true])("pending guests receive only admission status even when invitation row is visible: %s", async (visible) => {
   const db = {
     from(table: string) {
       const query = {
@@ -103,7 +103,7 @@ test("pending guests can reload admission status without receiving private room 
           return query;
         },
         maybeSingle: async () => ({
-          data: table === "session_members" ? { status: "waiting" } : null,
+          data: table === "session_members" ? { status: "waiting" } : visible ? { id: roomId, owner_id: "another-host" } : null,
           error: null,
         }),
       };

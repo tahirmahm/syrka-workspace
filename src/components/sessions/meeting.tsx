@@ -65,6 +65,8 @@ export default function Meeting({
   const [token, setToken] = useState<{ token: string; url: string } | null>(
     null,
   );
+  const activeCall = useRef(token);
+  activeCall.current = token;
   const [editingCard, setEditingCard] = useState<string | null>(null);
   const [cardFront, setCardFront] = useState("");
   const [cardBack, setCardBack] = useState("");
@@ -139,6 +141,20 @@ export default function Meeting({
         }
         setError("");
       } catch (e) {
+        if (
+          e &&
+          typeof e === "object" &&
+          "status" in e &&
+          [401, 403, 404].includes(Number(e.status)) &&
+          activeCall.current
+        ) {
+          setToken(null);
+          setSnapshot(null);
+          setJoinRequested(false);
+          setCallNotice(
+            "Your session or meeting access ended. Sign in or request admission before rejoining.",
+          );
+        }
         setError(e instanceof Error ? e.message : String(e));
       } finally {
         poll.current = false;

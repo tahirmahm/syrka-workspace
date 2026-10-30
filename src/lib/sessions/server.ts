@@ -170,6 +170,16 @@ export async function sessionsHandler(
         }
         throw error;
       }
+      // Waiting members can see the invitation row under existing RLS, but
+      // must receive only their own admission status from the application API.
+      if (room.owner_id !== ctx.user.id) {
+        const own = check(
+          await ctx.db.from("session_members").select("status")
+            .eq("room_id", id).eq("user_id", ctx.user.id).maybeSingle(),
+        ).data;
+        if (own?.status === "waiting")
+          return json({ admission: "waiting", user_id: ctx.user.id });
+      }
       const [members, segments, note, jobs, cards, annotations] =
         await Promise.all([
           ctx.db.from("session_members").select("*").eq("room_id", id),

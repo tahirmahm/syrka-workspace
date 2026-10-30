@@ -50,7 +50,10 @@ export async function sessionsApi(
   if (!response.headers.get("content-type")?.includes("application/json"))
     throw Error("Sign in to the selected application before opening Sessions.");
   const result = await response.json();
-  if (!response.ok) throw Error(result.error || "Sessions request failed.");
+  if (!response.ok)
+    throw Object.assign(new Error(result.error || "Sessions request failed."), {
+      status: response.status,
+    });
   return result;
 }
 function demoRequest(payload?: Record<string, unknown>, id?: string): unknown {
