@@ -1,86 +1,92 @@
-# Sessions and Notes: implementation and release gate
+# Syrka Sessions and Notes — feature branch release record
 
-This is an additive feature branch, not a claim of a completed communications service. Existing editors, file models, authentication and public file-processing tools are preserved.
+## Current decisions (30 October 2026, Europe/Prague)
 
-## Implemented paths
+Continue the existing `feature/sessions-notes` branches and draft PRs Workspace #4 / Campus #8. Do not merge or promote to production until acceptance passes. Preserve existing editors, academic features, identities, storage and DNS.
 
-- `/workspace/tools/sessions`: meeting list, schedule, UTC weekly occurrences, project labels, secure-link admission.
-- `/workspace/tools/notes`: authorized keyword search over meetings, transcripts and structured notes.
-- `/workspace/tools/sessions/meeting/[id]`: host admission/removal/publish permissions, lock/end, consent, transcript imports/corrections, source links, human-reviewed notes, personal folders/bookmarks and editable spaced-review flashcards.
-- Notes export through the existing Write document model to editable DOCX, PDF, Markdown and TXT; save a separate editable copy in the existing Workspace library. Transcript TXT/SRT/VTT exports preserve timestamps. Originals are not overwritten.
-- Campus course Sessions section, staff scheduling, enrolled-student entry, instructor publication and My Lecture Notes dashboard/route. Campus links open the shared meeting UI with `?source=campus`.
-- Maintained LiveKit client and server SDK integration. VideoConference supplies camera/microphone, device selection, screen share, participant list, chat and connection UI. Browser receives only a short-lived participant token; server verifies membership before issuing it.
-- Configured eligible AI adapters provide structured, source-validated summaries, retrieval Q&A, explanations, tutoring, practice questions, flashcards, follow-up drafts and separate translations. These operations are disabled until an eligible provider is configured. No fabricated result substitutes for a failed provider.
+The user has confirmed in their Singapore Benefits dashboard that these general-purpose API benefits are ACTIVE with 100% remaining at confirmation, Free Quota Only enabled, expiring **29 January 2027**:
 
-## Data boundaries
+- `qwen3.8-flash`, `qwen3.8-max`: 1M tokens each.
+- `qwen3-asr-flash`, `qwen3-asr-flash-filetrans`, `qwen3-asr-flash-realtime`, `fun-asr`, `fun-asr-realtime`: 36,000 seconds each.
+- `qwen-audio-3.1-asr-flash`, `qwen-audio-3.1-asr-flash-filetrans`, `qwen-audio-3.1-asr-flash-streaming`: 1M tokens each.
 
-Workspace uses only `zguejzlseldovdssiumn`. Campus uses only `pftbpimhyophitfuzcxn`. Identical-looking user IDs are never treated as a shared identity. Workspace requests verify a bearer token with its own Auth service. Campus requests verify its `/cam` scoped session cookies. The canonical same-origin `https://www.syrka.co` hosts both paths; the Campus cookie is sent to `/cam/api/sessions`, not to the Workspace server. No service-role keys are used in normal requests.
+This is an operator account entitlement confirmation, not a guarantee of remaining quota after subsequent calls. Do not activate Pay-As-You-Go or paid fallback. The restricted Coding Plan key remains rejected. General-purpose credentials use the **existing `SYRKA_AI_*` names**, not duplicate keys. QWEN key/URL aliases remain optional compatibility only; canonical variables win.
 
-Both migrations add `session_rooms`, members, segments, revisions, notes, jobs, cards and annotations. Private helpers implement admission and daily usage accounting. RLS enforces ownership, enrolled-course access, faculty assignments and explicit publication. Revoked Campus membership/enrollment removes lecture access. Transcript originals and correction history are immutable to clients. Original imported speaker names are unverified; local speech chunks are attributed only to the authenticated microphone track owner, not inferred diarization.
+The user explicitly allows the existing exposed LiveKit credentials for **development testing**, without rotation. They are scoped only to Workspace Preview branch `feature/sessions-notes`. `LIVEKIT_DEVELOPMENT_ONLY=true` blocks media capability when `VERCEL_ENV=production`. Do not copy those credentials to production. No new LiveKit project was created.
 
-Shared server protocol modules are vendored in both repos. After editing them run `node scripts/sync-sessions.mjs ../syrka-campus` from Workspace. The generated SHA-256 manifests let reviewers compare the copies. Neither build requires the other repo.
+## Model and transport choices
 
-## Provider audit: 29 October 2026
+- Summaries, lecture notes, action items, tutoring, questions and flashcards: **`qwen3.8-flash`**, OpenAI-compatible chat completions, JSON Schema structured outputs, thinking disabled for bounded latency, Zod/source-reference validation. No automatic model/provider fallback.
+- Uploaded audio: **`qwen3-asr-flash-filetrans`**, DashScope asynchronous task API. The exact body uses **`input.file_url` (singular)**, `X-DashScope-Async: enable`, language, channel 0, `enable_words:true`, `enable_itn:false`. Poll `/api/v1/tasks/{id}`, then retrieve the provider-owned result JSON. Preserve sentence begin/end timestamps and detected language. No verified speaker attribution is available for this model; uploaded speakers remain explicitly unknown.
+- Live microphone: **`qwen3-asr-flash-realtime`**, server-side outbound WebSocket, `/api-ws/v1/realtime?model=...`. Session update specifies mono signed PCM16 at 16 kHz, language and manual mode. Send append events, commit, receive completed transcript, finish and wait for session.finished. Never pass the general-purpose key to the browser.
+- Vercel-safe live implementation captures four-second microphone batches using AudioWorklet, sends each by authenticated HTTP, and opens a bounded outbound provider connection for that batch. This is **near-real-time batch delivery using the Realtime model**, not one uninterrupted conversational socket or word-by-word streaming UI. Timestamps identify microphone batch intervals. Calls are bounded to 35 seconds; no self-hosted WebSocket server or in-memory cross-invocation session is required. Audio batches are not retained.
+- Optional Audio 3.x adapter is implemented separately: native `/api/v1/services/aigc/multimodal-generation/generation`, input_audio Base64 Data URI, parameters matching actual container and language hints. `qwen-audio-3.0-asr-flash` and its streaming variant have no published free quota and remain blocked. The approved 3.1 non-streaming alternative is compatible but is not the selected live/upload pipeline. No automatic paid substitution occurs.
+- Urdu is not listed for the selected recognition models; it is omitted from their active speech language controls. Unicode Urdu documents/transcript imports remain supported. Do not claim arbitrary-language ASR or automatic diarization.
 
-Official Qwen Coding Plan documentation: https://www.alibabacloud.com/help/en/model-studio/coding-plan
+Official references checked:
 
-- Singapore Token/Coding Plan endpoint: `https://coding-intl.dashscope.aliyuncs.com/v1`; keys start `sk-sp-`.
-- The documented plan explicitly prohibits automated scripts, **application backends** and other non-interactive use. It is a personal interactive programming-tool subscription. Therefore the supplied key is not installed or invoked for Sessions.
-- Current listed models: `qwen3.7-plus`, `qwen3.6-plus`, `qwen3.5-plus`, `kimi-k2.5`, `glm-5`, `MiniMax-M2.5`. No speech-recognition or embedding models are included in this list. Documentation says Lite renewals were discontinued and existing subscriptions work only until expiry. Account-specific entitlement/expiry is not verified.
-- Application code rejects Coding Plan keys/endpoints. It never switches them to a Pay-As-You-Go endpoint. An eligible application API or written provider entitlement is required to enable AI. A Qwen application endpoint must be configured explicitly; there is no default billable endpoint.
+- [Model prices and quotas](https://www.alibabacloud.com/help/en/model-studio/model-pricing)
+- [Free Quota Only and exhaustion behavior](https://www.alibabacloud.com/help/en/model-studio/new-free-quota)
+- [Structured outputs](https://www.alibabacloud.com/help/en/model-studio/qwen-structured-output)
+- [File transcription API](https://www.alibabacloud.com/help/en/model-studio/qwen-asr-api-reference)
+- [Realtime client events](https://www.alibabacloud.com/help/en/model-studio/qwen-asr-realtime-client-events) and [server events](https://www.alibabacloud.com/help/en/model-studio/qwen-asr-realtime-server-events)
+- [Audio 3.x HTTP API](https://www.alibabacloud.com/help/en/model-studio/fun-asr-flash-recorded-speech-recognition-http-api)
+- [Realtime authentication](https://www.alibabacloud.com/help/en/model-studio/realtime-token-authentication)
+- [LiveKit connection](https://docs.livekit.io/intro/basics/connect/)
 
-LiveKit official docs: https://docs.livekit.io/intro/basics/connect/ and https://livekit.io/pricing
+## Configuration
 
-- Existing endpoint: `wss://syrka-sessions-2ja3fujk.livekit.cloud`.
-- Build is listed at $0/month; account plan, quotas and egress entitlement have not been independently confirmed. Do not enable Ship or recording egress.
-- The directive requires replacing the chat-exposed secret before production. No exposed credential is committed or installed in production by this branch.
+Keep secrets server-side in the existing Vercel project. Do not print/decrypt secrets to diagnose scope. Inspect variable names, target environments and Git branch metadata instead.
 
-Groq speech docs: https://console.groq.com/docs/speech-to-text and https://console.groq.com/docs/rate-limits
+Canonical text configuration:
 
-- An optional, disabled-by-default adapter supports the documented `whisper-large-v3-turbo` model, or configured `whisper-large-v3`. This is **not** part of the Qwen subscription and is not provisioned.
-- Chunked microphone capture yields near-real-time final segments, not streaming interim captions or automatic diarization. Original language is retained. All admitted participants must consent before chunks can be processed; revocation stops further accepted processing. Already-sent processing cannot be recalled.
-- Without eligible free STT credentials or separately available open-source worker compute, live/post-meeting audio transcription is unavailable. Manual TXT/SRT/VTT transcript import works. No separate paid speech service or worker was activated.
+```
+SYRKA_AI_PROVIDER=qwen
+SYRKA_AI_MODEL=qwen3.8-flash
+SYRKA_AI_API_KEY=<general-purpose Singapore key>
+SYRKA_AI_BASE_URL=https://<workspace>.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
+SYRKA_FREE_TIER_CONFIRMED=true
+SYRKA_AI_DAILY_BUDGET=0
+SYRKA_AI_FREE_QUOTA_ONLY_CONFIRMED=true
+SYRKA_STT_FREE_QUOTA_ONLY_CONFIRMED=true
+SYRKA_FREE_QUOTA_EXPIRES_AT=2027-01-29T00:00:00Z
+SYRKA_STT_PROVIDER=qwen
+SYRKA_STT_MODEL=qwen3-asr-flash-realtime
+SYRKA_STT_UPLOAD_MODEL=qwen3-asr-flash-filetrans
+```
 
-## Configuration (server-side only)
+The two model-specific confirmation flags record the user's verified provider Free Quota Only setting. They do not themselves enable that provider-side protection. Inference fails closed when confirmation is absent or the conservative expiry cutoff is reached. Quota/auth/rate errors are actionable and are not retried onto paid fallback. Each text call has at most two attempts, 5,000 output tokens and a 35-second timeout. Do not log raw provider responses containing private source text or request credentials.
 
-`.env.example` documents empty values. Do not paste keys into source, logs, tickets or client variables.
+The existing five Qwen variables were initially Production-only. Their scopes were expanded to Preview **without reading or replacing their values**. Production values were preserved. All additional development/media flags are branch-scoped Preview only. A new Git-linked deployment is needed for runtime environment updates. The prior Preview's environment is not evidence of missing saved project configuration.
 
-- `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`: rotated existing-project credentials.
-- `SYRKA_FREE_TIER_CONFIRMED=true`: operator has verified selected account's free entitlement. Absent/false disables provider calls, including media. This flag does not turn a paid account into a free one.
-- `SYRKA_AI_DAILY_BUDGET=0`: nonzero monetary spend is disallowed. Do not enable overages/Pay-As-You-Go.
-- `SYRKA_AI_PROVIDER=groq|gemini|qwen`, `SYRKA_AI_MODEL`, `SYRKA_AI_API_KEY`; `SYRKA_AI_BASE_URL` / `QWEN_BASE_URL` for explicitly authorized Qwen application endpoints. `QWEN_API_KEY` alone does not enable inference. Coding Plan credentials are rejected.
-- Optional fallback uses `SYRKA_AI_FALLBACK_PROVIDER`, `MODEL`, `API_KEY`, `BASE_URL` with the same eligibility requirements.
-- Optional STT: `SYRKA_STT_PROVIDER=groq`, `SYRKA_STT_API_KEY`, `SYRKA_STT_MODEL`. Enable only after confirming an eligible free account and consent/privacy policy.
+## Architecture and security
 
-Configure both existing Vercel projects independently: Campus calls its own token/AI API. Do not copy Workspace database credentials to Campus. Do not create replacement projects.
+Workspace uses `zguejzlseldovdssiumn`; Campus uses `pftbpimhyophitfuzcxn`. They never share Auth identities. Workspace verifies its bearer token with Auth; Campus verifies its own `/cam` cookies and active DB memberships/faculty assignments/enrollment. The canonical same-origin UI at www.syrka.co calls the appropriate app's API. No service-role credential is used for normal requests.
 
-## Processing and retention limits
+Routes: `/workspace/tools/sessions`, `/workspace/tools/notes`, `/workspace/tools/sessions/meeting/[id]`; Campus course Sessions section and `/cam/lecture-notes` with automatic instructor-published notes on the student dashboard.
 
-Jobs are persisted with an idempotency key and atomic claim; failures remain visible and leave transcripts intact. Each model request has a 35-second timeout, at most two attempts and 5,000 output tokens. Chunking uses 12,000-character chunks and a maximum of 12 chunks with hierarchical note consolidation. Retrieval uses up to 18 matching passages. Server/database daily caps are 20 AI jobs and 600 speech chunks per user, survive session deletion and cannot be reset by client edits. Usage is recorded in note-job outputs when the provider returns token counts. These are application guards, not provider billing guarantees.
+Migrations are additive. RLS protects rooms, admission, immutable transcript originals/revisions, publication, jobs, personal cards and annotations. Draft notes are host-only; enrolled Campus students see published materials according to course access. Revoked enrollment/faculty membership removes access. Live STT requires consent from every approved participant before processing and again before insertion. Attribution is to the authenticated local microphone owner, not speaker identity inference; speech played into that microphone can still be another person's voice.
 
-Execution uses Next `after()` within a 300-second function window, **not a durable unattended queue**. Very long jobs can outlive that window and require operator review/retry. There is no exactly-once external model-call guarantee after process termination. A durable worker with authorized compute is still needed for unattended long lectures and complete per-request token accounting/budget reservation. Do not market this as an unlimited lecture processor.
+Private uploaded audio uses a separate `session-audio` bucket, 20 MB limit, audio MIME allowlist and randomized owner/room paths. Only the current host can create, read or delete their own room's temporary uploads. Upload processing requires explicit participant-permission attestation. Signed URLs let Qwen fetch the object for a limited period; they are not stored in public records or logs. Audio is deleted after successful or failed processing. Interrupted submissions may require host cleanup; this is not automatic physical retention enforcement.
 
-Retention days restrict the transcript API's default window. Authorized hosts can explicitly delete ended sessions and cascaded records. Physical expiry/purge scheduling is not implemented; the setting is not a guarantee of automatic erasure. There is no recording storage/playback/egress implementation.
+Provider task bindings are HMAC-signed over job, room, actor, task, path, language and expiry. Client-writable job metadata cannot authorize a forged task ID or read another task. Result downloads are restricted to provider-owned HTTPS hosts. Sentence IDs derive deterministically from job/index, so repeated polls cannot duplicate imported transcript rows. Async provider tasks can finish independently; polling resumes while opening the host's session. No always-running worker is claimed.
 
-## Rollout
+Daily application caps: 20 AI jobs, 20 uploaded-file jobs and 1,800 four-second speech batches per user. Usage ledger survives session deletion. Shared provider quota remains the final free-only limit. Notes/export copies reuse Write; original files are not overwritten. Export DOCX/PDF/MD/TXT and timestamped TXT/SRT/VTT. Existing eight local file tools stay local; Sessions and Notes are explicit cloud features.
 
-1. Run lint, typecheck, unit/SQL tests, production build and browser tests in both repositories. Workspace SQL tests use disposable PGlite; Campus tests run existing migrations plus the additive migration in disposable PGlite. Never run the test harness against hosted user data.
-2. Commit/push both feature branches and open coordinated PRs. Check upstream before pushing. Review additive schema and RLS before release.
-3. Apply only the Workspace Sessions migration to Workspace, and only the Campus Sessions migration to Campus. Use an authorized project connection. Run hosted advisors and verify RLS with disposable test actors. Campus project access was denied by the currently connected Supabase account; that migration cannot yet be installed.
-4. Configure rotated LiveKit secrets, confirm free account entitlement and an eligible AI/STT setup through server-only Vercel environment variables. Do not reuse exposed secrets or activate paid fallback services.
-5. Merge reviewed GitHub changes to main; let the existing Git integrations deploy. Verify Vercel deployment metadata matches each Git SHA and preserve `/`, `/workspace`, `/workspace/tools`, `/cam`. Do not deploy independently or change DNS.
-6. Run the mandatory real two-user professional meeting and instructor/student class journeys, consent/revocation, media/device/screenshare/chat/removal, real STT, genuine AI, publication, student revision and failure/quota recovery. Until observed, tests A/B are **blocked**, not passed.
+Shared modules are vendored to Campus through `node scripts/sync-sessions.mjs ../syrka-campus`; SHA-256 manifests track their integrity. Builds do not depend on the sibling checkout.
+
+## Verification and rollout gates
+
+The foundational migrations, RLS, demo transcripts, note editing, search, exports and revision cards were previously tested locally. Current changes add model-specific wire-format tests, paid-model exclusion, quota failure handling, HMAC tamper checks and private upload RLS tests. Live tests must record the exact deployed SHA and actual provider responses; fixtures are never substituted for those acceptance results.
+
+The committed foundational Workspace migration was applied to the dedicated project during Preview testing; its filename now matches the recorded hosted migration version. Existing files/Auth data were not migrated or overwritten. The audio/job migration must be committed and verified before hosted application. Campus hosted access is still denied by the current connected Supabase account; do not target another project to bypass that boundary.
+
+Two temporary, uniquely named QA accounts were registered through normal signup using the controlled mailbox, then authenticated through normal password login. These actors are isolated from real users; only their own created test sessions/files should be cleaned up. Verification links may already be consumed by email processing; login/session checks, not an expired-link result alone, determine whether confirmation succeeded.
+
+The LiveKit API accepted the existing development credentials and an isolated room creation. The initial two-browser transport probe timed out in this environment. This is **not a passed audio/video acceptance test**. Diagnose signaling/ICE/proxy separately and do not treat credential validation as proof of media delivery.
+
+Before release: pass actual Workspace meeting → authorized audio → provider transcript → source-grounded notes → saved Notes, then Campus instructor → class → published notes → student dashboard, plus user/tenant isolation, revocation and failure recovery. Keep both PRs as drafts until those acceptance tests pass. Use GitHub pushes and existing automatic Vercel Git previews only; do not create independent deployments, merge PRs, change DNS or activate paid services.
 
 ## Remaining scope
 
-Recording/secure playback, durable workers, physical retention purge, automatic end-of-meeting note generation, delivered invitations/calendar sync, DST-aware wall-clock recurrences, project foreign-key integration (current project is a label), cross-lecture AI comparison/material attachments, semantic search, richer quiz types and saved quiz attempts, institutional policy administration, ontology ID/Roadmaps API integration and verified competence evidence remain unavailable. Existing ontology contracts were not found; no identifiers or qualifications are invented. Attendance is not proficiency. Follow-up messages are drafts only, never sent automatically.
-
-No purchase, plan change, paid API activation, DNS change, replacement cloud project or changes to Passport/Roadmap were performed. Existing paid Qwen subscription costs are external to this implementation; it cannot be used to serve these backend requests under the documented plan terms. Expected newly enabled infrastructure cost: $0 while the gates remain off; production capacity beyond free entitlement requires explicit approval and a separate estimate.
-
-## Verification record (local feature branch)
-
-- Workspace: lint, TypeScript, production build and 25 unit/SQL tests passed. Existing 33 editor/tool browser regressions passed. All four new Sessions browser tests passed, including keyword search, human note and flashcard edits/reload, timestamp imports, anonymous API rejection and format-aware DOCX/PDF export parsing. A stale test label (`Study` versus the actual `Revision` tab) was corrected and the affected suite rerun successfully.
-- Campus: lint, strict TypeScript, production build, 19 unit/SQL tests and two unconfigured/mobile browser checks passed. These are not hosted instructor/student acceptance tests.
-- Simulated unavailable AI provider: two bounded attempts, recoverable error, unchanged transcript. SQL tests cover idempotent reservations, quotas, publication and tenant revocation. No actual Qwen inference or speech-recognition quality benchmark was run.
-- Workspace's hosted pre-release security advisor reported only existing leaked-password-protection disabled; it was not enabled because of the free-tier restriction. [Supabase password protection guidance](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection). Campus advisor remains inaccessible. The new migration has not been assessed on either hosted database because it has not been applied there.
-- Real two-participant meeting and online-class acceptance tests A/B remain blocked. Recording, provider latency/accuracy and cloud quota enforcement are not verified. Acceptance test C is simulated locally; D is verified against disposable SQL, not hosted Auth actors for these new tables.
+Recording/egress/playback, a continuously streamed transcription UI, unattended long-running summary workers, automatic physical retention purging, calendar delivery/invitation emails, DST-aware recurrence, real project foreign keys, cross-lecture comparison, semantic retrieval and ontology/Roadmaps identifiers remain unimplemented. Attendance and AI notes are not proficiency, qualifications or public Career Passport evidence. No external messages/tasks are sent automatically.

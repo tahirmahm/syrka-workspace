@@ -158,6 +158,8 @@ export type Card = {
   segment_ids: string[];
 };
 export type Capabilities = {
+  speechFormat?: "pcm" | "encoded";
+  speechLanguages?: string[];
   video: boolean;
   stt: boolean;
   ai: boolean;

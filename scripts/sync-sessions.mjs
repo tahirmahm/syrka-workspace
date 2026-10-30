@@ -6,7 +6,15 @@ const target = resolve(
   process.argv[2] || "../syrka-campus",
   "src/lib/sessions",
 );
-const names = ["model.ts", "providers.ts", "server.ts", "transcripts.ts"];
+const names = [
+  "model.ts",
+  "providers.ts",
+  "server.ts",
+  "transcripts.ts",
+  "qwen.ts",
+  "qwen-realtime.ts",
+  "qwen-filetrans.ts",
+];
 const files = {};
 await mkdir(target, { recursive: true });
 for (const name of names) {

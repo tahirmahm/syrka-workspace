@@ -59,6 +59,11 @@ export default function Meeting({
   const [cardBack, setCardBack] = useState("");
   const [question, setQuestion] = useState("");
   const [noteDraft, setNoteDraft] = useState("");
+  const [audioUpload, setAudioUpload] = useState<File | null>(null);
+  const [audioLanguage, setAudioLanguage] = useState("en");
+  const [audioPermission, setAudioPermission] = useState(false);
+  const audioPolling = useRef(false);
+  const lastAudioPoll = useRef(0);
   const [imported, setImported] = useState("");
   const [format, setFormat] = useState("txt");
   const [permission, setPermission] = useState(false);
@@ -153,6 +158,74 @@ export default function Meeting({
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       return null;
+    } finally {
+      setBusy(false);
+    }
+  }
+  useEffect(() => {
+    const job = snapshot?.jobs.find(
+      (j) => j.kind === "filetrans" && j.state === "running",
+    );
+    if (
+      !job ||
+      audioPolling.current ||
+      Date.now() - lastAudioPoll.current < 4000
+    )
+      return;
+    audioPolling.current = true;
+    lastAudioPoll.current = Date.now();
+    void sessionsApi(source, {
+      action: "poll_uploaded",
+      roomId: id,
+      job_id: job.id,
+    })
+      .then((result) => {
+        if (result.state === "done") void load(true);
+      })
+      .catch((e) =>
+        setError(e instanceof Error ? e.message : "Audio processing failed."),
+      )
+      .finally(() => (audioPolling.current = false));
+  }, [snapshot, source, id, load]);
+  async function uploadAudio() {
+    if (!audioUpload || !audioPermission) return;
+    setBusy(true);
+    setError("");
+    try {
+      const ext = audioUpload.name.split(".").pop()?.toLowerCase();
+      const prepared = await sessionsApi(source, {
+        action: "prepare_audio",
+        roomId: id,
+        extension: ext,
+        size: audioUpload.size,
+        confirmed: true,
+      });
+      const types: Record<string, string> = {
+        wav: "audio/wav",
+        mp3: "audio/mpeg",
+        mp4: "audio/mp4",
+        webm: "audio/webm",
+        ogg: "audio/ogg",
+      };
+      const upload = await fetch(prepared.url, {
+        method: "PUT",
+        headers: { "Content-Type": types[ext || ""] || audioUpload.type },
+        body: audioUpload,
+      });
+      if (!upload.ok)
+        throw Error("Private audio upload failed. Check file format and size.");
+      await sessionsApi(source, {
+        action: "transcribe_uploaded",
+        roomId: id,
+        path: prepared.path,
+        language: audioLanguage,
+        confirmed: true,
+        request_id: crypto.randomUUID(),
+      });
+      setAudioUpload(null);
+      await load(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Audio transcription failed.");
     } finally {
       setBusy(false);
     }
@@ -368,6 +441,8 @@ export default function Meeting({
           )}
           {token ? (
             <LiveStage
+              speechLanguages={snapshot.capabilities.speechLanguages}
+              speechFormat={snapshot.capabilities.speechFormat}
               token={token.token}
               url={token.url}
               source={source}
@@ -695,6 +770,68 @@ export default function Meeting({
                   No shared transcript is available. The host controls
                   publication and retention.
                 </p>
+              )}
+              {host && snapshot.capabilities.stt && (
+                <details className="session-form">
+                  <summary>Transcribe a permitted audio recording</summary>
+                  <p>
+                    Private upload, up to 20 MB. Qwen file transcription returns
+                    sentence timestamps. Speaker identities are unverified.
+                    Temporary audio is deleted after processing; this does not
+                    record the current meeting.
+                  </p>
+                  <label>
+                    Audio file
+                    <input
+                      type="file"
+                      accept=".wav,.mp3,.mp4,.webm,.ogg"
+                      onChange={(e) =>
+                        setAudioUpload(e.target.files?.[0] || null)
+                      }
+                    />
+                  </label>
+                  <label>
+                    Recording language
+                    <select
+                      value={audioLanguage}
+                      onChange={(e) => setAudioLanguage(e.target.value)}
+                    >
+                      {(snapshot.capabilities.speechLanguages || ["en"]).map(
+                        (language) => (
+                          <option key={language}>{language}</option>
+                        ),
+                      )}
+                    </select>
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={audioPermission}
+                      onChange={(e) => setAudioPermission(e.target.checked)}
+                    />
+                    I have permission from the recorded participants to upload
+                    this audio and process it with Qwen.
+                  </label>
+                  <button
+                    disabled={
+                      busy ||
+                      !audioPermission ||
+                      !audioUpload ||
+                      audioUpload.size > 20971520
+                    }
+                    onClick={() => void uploadAudio()}
+                  >
+                    {busy ? "Uploading / submitting…" : "Upload & transcribe"}
+                  </button>
+                  {snapshot.jobs
+                    .filter((j) => j.kind === "filetrans")
+                    .map((j) => (
+                      <p key={j.id} role="status">
+                        Audio transcription: {j.state}
+                        {j.error ? ` — ${j.error}` : ""}
+                      </p>
+                    ))}
+                </details>
               )}
               {host && (
                 <details className="session-form">

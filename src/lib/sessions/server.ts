@@ -1,3 +1,10 @@
+import {
+  submitFileTranscription,
+  pollFileTranscription,
+  signFileBinding,
+  verifyFileBinding,
+} from "./qwen-filetrans";
+import { providerFailure } from "./qwen";
 import { createHash, randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
@@ -62,6 +69,15 @@ function host(ctx: SessionContext, room: SessionRoom) {
   if (room.owner_id !== ctx.user.id)
     throw new HttpError(403, "Only the host can do that.");
 }
+export function isMediaMissing(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const e = error as { status?: number; code?: string; message?: string };
+  return (
+    e.status === 404 ||
+    e.code === "not_found" ||
+    (!e.status && /not[ _-]?found|does not exist/i.test(e.message || ""))
+  );
+}
 function media() {
   if (!capabilities().video)
     throw new HttpError(503, "LiveKit is not configured.");
@@ -81,6 +97,7 @@ function media() {
     url.toString(),
     process.env.LIVEKIT_API_KEY!,
     process.env.LIVEKIT_API_SECRET!,
+    { requestTimeout: 10 },
   );
 }
 const mediaRoom = (ctx: SessionContext, id: string) =>
@@ -111,6 +128,7 @@ export async function sessionsHandler(
         const rooms = check(await query);
         return json({
           rooms: rooms.data,
+          deployment_sha: process.env.VERCEL_GIT_COMMIT_SHA || null,
           capabilities: capabilities(),
           user_id: ctx.user.id,
         });
@@ -303,7 +321,7 @@ export async function sessionsHandler(
         try {
           await media().deleteRoom(mediaRoom(ctx, id));
         } catch (e) {
-          if (!(e instanceof Error && /not found/i.test(e.message)))
+          if (!isMediaMissing(e))
             throw new HttpError(
               503,
               "The media room could not be ended. Try again.",
@@ -347,7 +365,7 @@ export async function sessionsHandler(
               },
             );
         } catch (e) {
-          if (!(e instanceof Error && /not found/i.test(e.message)))
+          if (!isMediaMissing(e))
             throw new HttpError(
               503,
               "Live participant permissions could not be updated.",
@@ -385,6 +403,158 @@ export async function sessionsHandler(
             ),
         );
       return json({ count: entries.length });
+    }
+    if (action === "prepare_audio") {
+      host(ctx, room);
+      if (!capabilities().stt || process.env.SYRKA_STT_PROVIDER !== "qwen")
+        throw new HttpError(503, "Qwen audio import is not configured.");
+      if (input.confirmed !== true)
+        throw new HttpError(
+          400,
+          "Confirm permission to upload and process this recording.",
+        );
+      z.number().int().positive().max(20971520).parse(input.size);
+      const extension = z
+        .enum(["wav", "mp3", "mp4", "webm", "ogg"])
+        .parse(input.extension);
+      const path = `${ctx.user.id}/${id}/${randomUUID()}.${extension}`;
+      const result = check(
+        await ctx.db.storage.from("session-audio").createSignedUploadUrl(path),
+      );
+      return json({ path, url: result.data?.signedUrl });
+    }
+    if (action === "transcribe_uploaded") {
+      host(ctx, room);
+      if (input.confirmed !== true)
+        throw new HttpError(400, "Audio processing permission is required.");
+      const path = z.string().max(500).parse(input.path);
+      if (!path.startsWith(`${ctx.user.id}/${id}/`) || path.includes(".."))
+        throw new HttpError(403, "Audio ownership mismatch.");
+      const language = z.enum(languages).parse(input.language);
+      const key = z.uuid().parse(input.request_id);
+      const jobId = check(
+        await ctx.db.rpc("session_reserve_filetrans", {
+          room: id,
+          request_key: key,
+        }),
+      ).data;
+      if (!check(await ctx.db.rpc("session_claim_job", { job: jobId })).data)
+        return json({ job_id: jobId, replayed: true });
+      try {
+        const file = check(
+          await ctx.db.storage
+            .from("session-audio")
+            .createSignedUrl(path, 3600),
+        ).data;
+        if (!file?.signedUrl) throw Error("Audio upload was not found.");
+        const task_id = await submitFileTranscription(file.signedUrl, language);
+        const binding = {
+          task_id,
+          audio_path: path,
+          language,
+          expires: Date.now() + 12 * 3600000,
+        };
+        check(
+          await ctx.db
+            .from("session_jobs")
+            .update({
+              state: "running",
+              output: {
+                binding,
+                signature: signFileBinding(binding, jobId, id, ctx.user.id),
+              },
+            })
+            .eq("id", jobId),
+        );
+        return json({ job_id: jobId });
+      } catch (e) {
+        await ctx.db
+          .from("session_jobs")
+          .update({
+            state: "failed",
+            error:
+              providerFailure(e)?.message ||
+              "Audio submission failed; the original transcript is intact.",
+          })
+          .eq("id", jobId);
+        await ctx.db.storage.from("session-audio").remove([path]);
+        throw e;
+      }
+    }
+    if (action === "poll_uploaded") {
+      host(ctx, room);
+      const jobId = z.uuid().parse(input.job_id);
+      const job = check(
+        await ctx.db
+          .from("session_jobs")
+          .select("*")
+          .eq("id", jobId)
+          .eq("room_id", id)
+          .eq("actor_id", ctx.user.id)
+          .eq("kind", "filetrans")
+          .single(),
+      ).data;
+      if (job.state !== "running") return json({ state: job.state });
+      const binding = verifyFileBinding(job.output, jobId, id, ctx.user.id);
+      try {
+        const result = await pollFileTranscription(
+          binding.task_id,
+          binding.language,
+        );
+        if (result.state !== "done") return json({ state: "running" });
+        const rows = result.segments.map((segment, index) => {
+          const h = createHash("sha256")
+            .update(`${jobId}:${index}`)
+            .digest("hex");
+          const segmentId = `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`;
+          return { ...segment, id: segmentId, room_id: id };
+        });
+        for (let offset = 0; offset < rows.length; offset += 100)
+          check(
+            await ctx.db
+              .from("session_segments")
+              .upsert(rows.slice(offset, offset + 100), {
+                onConflict: "id",
+                ignoreDuplicates: true,
+              }),
+          );
+        const removed = await ctx.db.storage
+          .from("session-audio")
+          .remove([binding.audio_path]);
+        check(
+          await ctx.db
+            .from("session_jobs")
+            .update({
+              state: "done",
+              output: {
+                segments: rows.length,
+                model: "qwen3-asr-flash-filetrans",
+                speaker_attribution: "unverified",
+                cleanup_required: !!removed.error,
+              },
+            })
+            .eq("id", jobId),
+        );
+        return json({
+          state: "done",
+          segments: rows.length,
+          warning: removed.error
+            ? "Transcription saved; temporary audio deletion needs a retry."
+            : null,
+        });
+      } catch (e) {
+        await ctx.db
+          .from("session_jobs")
+          .update({
+            state: "failed",
+            error:
+              providerFailure(e)?.message ||
+              "Uploaded audio transcription failed; existing transcript is intact.",
+          })
+          .eq("id", jobId);
+        await ctx.db.storage.from("session-audio").remove([binding.audio_path]);
+        throw e;
+      }
     }
     if (action === "edit_segment") {
       host(ctx, room);
@@ -642,6 +812,7 @@ async function speechRequest(request: Request, ctx: SessionContext) {
     !(blob instanceof Blob) ||
     blob.size > 2000000 ||
     ![
+      "audio/pcm",
       "audio/webm",
       "audio/webm;codecs=opus",
       "audio/mp4",
