@@ -257,7 +257,9 @@ function CallCanvas({
   panelLabel,
   title,
   presentation,
+  speechControls,
 }: {
+  speechControls?: React.ReactNode;
   title: string;
   presentation?: CallPresentation;
   panelLabel: string;
@@ -757,8 +759,12 @@ function CallCanvas({
             <span>More</span>
           </summary>
           <div
-            onClick={() => {
-              if (more.current) more.current.open = false;
+            onClick={(event) => {
+              if (
+                (event.target as HTMLElement).closest("button") &&
+                more.current
+              )
+                more.current.open = false;
             }}
           >
             <button aria-label="Copy meeting invitation" onClick={onInvite}>
@@ -802,6 +808,7 @@ function CallCanvas({
                   Full Screen
                 </button>
               )}
+            {speechControls}
             {presentation && (
               <button onClick={presentation.onMinimize}>
                 <Minimize2 size={17} />
@@ -949,6 +956,25 @@ export default function LiveStage({
           onError={handleConnectionError}
         >
           <CallCanvas
+            speechControls={
+              <label>
+                Speech language
+                <select
+                  aria-label="Speech language"
+                  value={language}
+                  onChange={(event) => setLanguage(event.target.value)}
+                >
+                  {speechLanguages.map((value) => (
+                    <option key={value}>{value}</option>
+                  ))}
+                </select>
+                <small>
+                  {transcribing
+                    ? "Consented microphone transcription is active."
+                    : "Transcription is off. Consent controls are in the notes panel."}
+                </small>
+              </label>
+            }
             title={title}
             presentation={presentation}
             panelLabel={panelLabel}
@@ -974,32 +1000,6 @@ export default function LiveStage({
           />
         </LiveKitRoom>
       </div>
-      <details className="session-live-info">
-        <summary>
-          {transcribing
-            ? "Transcription active"
-            : "Transcription off — calling remains available"}
-        </summary>
-        <label>
-          Speech language
-          <select
-            value={language}
-            onChange={(e) => setLanguage(e.target.value)}
-          >
-            {speechLanguages.map((l) => (
-              <option key={l}>{l}</option>
-            ))}
-          </select>
-        </label>
-        <p>
-          Only consenting participants’ microphone tracks are sent to the
-          configured provider.{" "}
-          {speechFormat === "pcm"
-            ? "Four-second near-real-time batches."
-            : "Twenty-second audio batches."}{" "}
-          Syrka does not retain these audio chunks.
-        </p>
-      </details>
     </section>
   );
 }

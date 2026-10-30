@@ -112,6 +112,13 @@ for (const viewport of [
       page.getByRole("button", { name: "Send message", exact: true }),
     ).toBeDisabled();
     await page.getByLabel("More call options", { exact: true }).click();
+    await expect(
+      page.getByLabel("Speech language", { exact: true }),
+    ).toBeVisible();
+    await page
+      .getByLabel("Speech language", { exact: true })
+      .selectOption("en");
+    await expect(page.locator(".call-more")).toHaveAttribute("open", "");
     await page
       .getByRole("button", { name: "Toggle transcript and notes" })
       .click();
