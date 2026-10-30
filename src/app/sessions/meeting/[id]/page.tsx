@@ -7,7 +7,7 @@ export default async function Session({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ source?: string; view?: string }>;
+  searchParams: Promise<{ source?: string; view?: string; start?: string }>;
 }) {
   const { id } = await params;
   const query = await searchParams;
@@ -19,6 +19,7 @@ export default async function Session({
     <ToolsShell application="sessions" cloudData title="Session">
       <Meeting
         id={id}
+        autoStart={query.start === "1"}
         source={query.source === "campus" ? "campus" : "workspace"}
         notesView={query.view === "notes"}
       />

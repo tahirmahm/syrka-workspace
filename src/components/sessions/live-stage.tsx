@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   LiveKitRoom,
   ParticipantTile,
@@ -37,6 +37,7 @@ import {
 import "@livekit/components-styles";
 import { endpoint, sessionHeaders } from "@/lib/sessions/client";
 import { capturePcm } from "@/lib/sessions/pcm";
+import type { CallDevices } from "./device-preview";
 import type { SessionSource } from "@/lib/sessions/model";
 function SpeechCapture({
   enabled,
@@ -238,7 +239,9 @@ function CallCanvas({
   panelOpen,
   onError,
   onLeave,
+  panelLabel,
 }: {
+  panelLabel: string;
   onLeave: () => void;
   onInvite: () => void;
   onPanel: () => void;
@@ -553,12 +556,12 @@ function CallCanvas({
           <span>Invite</span>
         </button>
         <button
-          aria-label="Toggle transcript and notes"
+          aria-label={panelLabel === "Consent" ? "Toggle transcription consent" : "Toggle transcript and notes"}
           aria-expanded={panelOpen}
           onClick={onPanel}
         >
           <PanelRight size={19} />
-          <span>Notes</span>
+          <span>{panelLabel}</span>
         </button>
         <button
           className="session-call-leave"
@@ -620,7 +623,11 @@ export default function LiveStage({
   onInvite,
   onDisconnect,
   onConnected,
+  devices = {},
+  panelLabel = "Notes",
 }: {
+  devices?: CallDevices;
+  panelLabel?: string;
   onConnected: () => void;
   token: string;
   url: string;
@@ -635,6 +642,10 @@ export default function LiveStage({
   speechLanguages?: string[];
   speechFormat?: "pcm" | "encoded";
 }) {
+  const captureOptions = useMemo(() => ({
+    audioCaptureDefaults: { deviceId: devices.microphone },
+    videoCaptureDefaults: { deviceId: devices.camera },
+  }), [devices.microphone, devices.camera]);
   const [language, setLanguage] = useState("en");
   const [error, setError] = useState("");
   const handleConnectionError = useCallback(
@@ -654,6 +665,7 @@ export default function LiveStage({
       )}
       <div data-lk-theme="default">
         <LiveKitRoom
+          options={captureOptions}
           token={token}
           serverUrl={url}
           connect
@@ -681,6 +693,7 @@ export default function LiveStage({
           onError={handleConnectionError}
         >
           <CallCanvas
+            panelLabel={panelLabel}
             onLeave={() =>
               onDisconnect(
                 "You left the meeting. You can join again while it is open.",

@@ -1,5 +1,5 @@
 "use client";
-import { supabase, isDemoMode } from "../storage";
+import { supabase, isDemoMode, setDemoMode } from "../storage";
 import { demoStore, saveDemo } from "./demo";
 import {
   nextReview,
@@ -29,8 +29,11 @@ export async function sessionsApi(
   id?: string,
   after?: string,
 ) {
-  if (source === "workspace" && isDemoMode()) return demoRequest(payload, id);
+  const roomId = id || (typeof payload?.roomId === "string" ? payload.roomId : undefined);
+  if (source === "workspace" && isDemoMode() && (!roomId || demoStore().snapshots[roomId]))
+    return demoRequest(payload, id);
   const headers = await sessionHeaders(source);
+  if (source === "workspace" && roomId && headers.Authorization && isDemoMode()) setDemoMode(false);
   const query = new URLSearchParams();
   if (id) query.set("id", id);
   if (after) query.set("after", after);

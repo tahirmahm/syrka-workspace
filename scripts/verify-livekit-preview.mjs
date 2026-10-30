@@ -1,6 +1,8 @@
 /** Real application/LiveKit acceptance. Credentials remain in ignored operator fixtures. */
 import { readFile, writeFile } from "node:fs/promises";
 import assert from "node:assert/strict";
+import { parseEnv } from "node:util";
+import { createClient } from "@supabase/supabase-js";
 import { chromium, request } from "@playwright/test";
 const target = process.env.SYRKA_PREVIEW_URL,
   sha = process.env.SYRKA_EXPECTED_SHA;
@@ -22,6 +24,22 @@ assert(
       (a) => a.email.includes("+syrka-sessions-") && a.session?.access_token,
     ),
 );
+let guestIdentityClient;
+if (process.env.SYRKA_QA_GUEST === "true") {
+  const config = parseEnv(await readFile(".env.local", "utf8"));
+  const guestClient = createClient(config.NEXT_PUBLIC_SUPABASE_URL, config.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    {auth:{persistSession:false,autoRefreshToken:false}});
+  const {data,error} = await guestClient.auth.signInAnonymously();
+  if (error || !data.session || !data.user?.is_anonymous) {
+    const blocked = {status:"BLOCKED_GUEST_AUTH",providerCode:error?.code || "anonymous_signin_failed",providerStatus:error?.status,
+      checked_at:new Date().toISOString(),media_verified:false};
+    await writeFile("/tmp/syrka-guest-auth-acceptance.json",JSON.stringify(blocked,null,2),{mode:0o600});
+    console.log(JSON.stringify(blocked)); process.exit(2);
+  }
+  guestIdentityClient = guestClient;
+  actors[1] = {id:data.user.id,session:data.session,email:"+syrka-sessions-guest@invalid.test"};
+  await writeFile("/tmp/syrka-guest-qa-session.json", JSON.stringify(actors[1]), {mode:0o600});
+}
 const proxy = process.env.HTTPS_PROXY
   ? { server: process.env.HTTPS_PROXY }
   : undefined;
@@ -46,6 +64,7 @@ const result = {
   physical_devices_manually_verified: false,
   room: null,
   clients: [],
+  clientKinds: ["account", process.env.SYRKA_QA_GUEST === "true" ? "anonymous_guest" : "account"],
   controls: "NOT_REACHED",
 };
 function check(label, ok) {
@@ -158,6 +177,15 @@ try {
   });
   const id = created.rooms[0].id;
   result.room = id;
+  if (guestIdentityClient) {
+    const invitation = await guestIdentityClient.rpc("session_invitation", {room:id});
+    check("Actual account-free guest can read only the opted-in invitation title and host name",
+      !invitation.error && invitation.data?.title === "QA LiveKit two authenticated browsers" &&
+      Object.keys(invitation.data).sort().join(",") === "host_name,title");
+    const privateFiles = await guestIdentityClient.from("office_files").select("id").limit(1);
+    check("Actual guest cannot read Workspace files", !privateFiles.error && privateFiles.data.length === 0);
+  }
+
   const foreign = await clients[1].post("/workspace/api/sessions", {
     data: { action: "token", roomId: id },
   });
@@ -336,7 +364,7 @@ try {
     );
     await page
       .getByRole("button", {
-        name: i ? "Join meeting" : "Start / join meeting",
+        name: i ? "Join meeting" : "Start call",
         exact: true,
       })
       .click();

@@ -66,7 +66,7 @@ test("schedule, import, search and timestamped download persist locally", async 
   page,
 }) => {
   await page
-    .getByRole("button", { name: "New / schedule meeting", exact: true })
+    .getByRole("button", { name: "New meeting", exact: true })
     .click();
   await page
     .getByLabel("Title", { exact: true })

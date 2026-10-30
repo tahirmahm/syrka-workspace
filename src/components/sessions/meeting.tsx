@@ -17,6 +17,7 @@ import {
   PanelRight,
 } from "lucide-react";
 import NotesReview from "./notes-review";
+import DevicePreview, { type CallDevices } from "./device-preview";
 import { Auth } from "@/components/auth";
 import { sessionsApi } from "@/lib/sessions/client";
 import {
@@ -32,7 +33,7 @@ import {
   type Job,
 } from "@/lib/sessions/model";
 import { notesDocument } from "@/lib/sessions/transcripts";
-import { saveFile, isDemoMode } from "@/lib/storage";
+import { saveFile, isDemoMode, setDemoMode, supabase } from "@/lib/storage";
 import { makeFile, download } from "@/lib/model";
 const LiveStage = dynamic(() => import("./live-stage"), {
   ssr: false,
@@ -42,12 +43,29 @@ export default function Meeting({
   id,
   source = "workspace",
   notesView = false,
+  autoStart = false,
 }: {
   id: string;
   source?: SessionSource;
   notesView?: boolean;
+  autoStart?: boolean;
 }) {
   const router = useRouter();
+  const [devices, setDevices] = useState<CallDevices>({});
+  const [invitation, setInvitation] = useState<{title: string; host_name: string} | null>(null);
+  const [invitationError, setInvitationError] = useState("");
+  const [callStarting, setCallStarting] = useState(false);
+  const connectInFlight = useRef(false), autoStarted = useRef(false);
+  useEffect(() => {
+    if (source !== "workspace" || !supabase) return;
+    let active = true;
+    void supabase.rpc("session_invitation", {room: id}).then(({ data, error }) => {
+      if (!active) return;
+      if (error) setInvitationError("Guest invitation details are unavailable. You can sign in or try requesting admission.");
+      else setInvitation(data);
+    });
+    return () => { active = false; };
+  }, [id, source]);
   const [clock, setClock] = useState(() => Date.now());
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [error, setError] = useState("");
@@ -57,6 +75,7 @@ export default function Meeting({
   const [panelOpen, setPanelOpen] = useState(notesView);
   const [signingIn, setSigningIn] = useState(false);
   const [joinRequested, setJoinRequested] = useState(false);
+  const [admissionDenied, setAdmissionDenied] = useState(false);
   const [speechPaused, setSpeechPaused] = useState(false);
   const [callNotice, setCallNotice] = useState("");
   const [origin, setOrigin] = useState("");
@@ -106,9 +125,15 @@ export default function Meeting({
           id,
           after,
         )) as Snapshot & {
-          admission?: "waiting";
+          admission?: "waiting" | "removed";
           annotations?: { body: string; folder: string; bookmarked: boolean };
         };
+        if (result.admission === "removed") {
+          setAdmissionDenied(true); setJoinRequested(false); setToken(null); setSnapshot(null); setSpeechPaused(true);
+          setError("The host declined or removed your admission. Contact the host before trying to rejoin.");
+          return;
+        }
+        setAdmissionDenied(false);
         if (result.admission === "waiting") {
           setJoinRequested(true);
           setSnapshot(null);
@@ -116,6 +141,10 @@ export default function Meeting({
           return;
         }
         setJoinRequested(false);
+        if (result.room.status === "ended" && activeCall.current) {
+          setToken(null);
+          setCallNotice("The host ended this meeting. Audio and video have disconnected.");
+        }
         setClock(Date.now());
         setSnapshot((old) => ({
           ...result,
@@ -141,6 +170,11 @@ export default function Meeting({
         }
         setError("");
       } catch (e) {
+        if (source === "workspace" && !latest.current && !activeCall.current &&
+            e && typeof e === "object" && "status" in e && e.status === 401) {
+          setError("");
+          return;
+        }
         if (
           e &&
           typeof e === "object" &&
@@ -185,7 +219,7 @@ export default function Meeting({
     );
     return () => clearTimeout(timer);
   }, [snapshot]);
-  async function action(payload: Record<string, unknown>, refresh = true) {
+  const action = useCallback(async (payload: Record<string, unknown>, refresh = true) => {
     setBusy(true);
     setError("");
     try {
@@ -199,7 +233,7 @@ export default function Meeting({
     } finally {
       setBusy(false);
     }
-  }
+  }, [source, id, load]);
   useEffect(() => {
     const job = snapshot?.jobs.find(
       (j) => j.kind === "filetrans" && j.state === "running",
@@ -274,7 +308,7 @@ export default function Meeting({
         location.origin + meetingLink(source, id),
       );
       setCallNotice(
-        "Meeting invitation copied. Recipients must sign in and be admitted.",
+        "Meeting invitation copied. Recipients must be admitted; guest access depends on the host’s settings.",
       );
     } catch {
       setCallNotice(
@@ -282,8 +316,10 @@ export default function Meeting({
       );
     }
   }
-  async function connect() {
-    if (!snapshot) return;
+  const connect = useCallback(async () => {
+    if (!snapshot || connectInFlight.current) return;
+    connectInFlight.current = true;
+    setCallStarting(true);
     setCallNotice("");
     try {
       if (
@@ -302,8 +338,34 @@ export default function Meeting({
       const result = await action({ action: "token" }, false);
       if (result) setToken(result);
     } catch (e) {
-      setError(String(e));
+      setError(e instanceof Error ? e.message : "The call could not start.");
+    } finally { connectInFlight.current = false; setCallStarting(false); }
+  }, [snapshot, display, action]);
+  useEffect(() => {
+    if (!autoStart || autoStarted.current || !snapshot ||
+        snapshot.room.owner_id !== snapshot.user_id || snapshot.me?.status !== "approved") return;
+    autoStarted.current = true;
+    if (!snapshot.capabilities.video || snapshot.room.status === "ended") {
+      setCallNotice("Calling is unavailable for this meeting. Check service availability or try another meeting.");
+      return;
     }
+    void connect();
+  }, [autoStart, snapshot, connect]);
+  async function requestAdmission() {
+    if (source === "campus") { await action({ action: "request_join", display_name: display }); return; }
+    setBusy(true); setError("");
+    try {
+      if (!supabase) throw Error("Workspace cloud is unavailable. Try again after configuration is restored.");
+      const current = (await supabase.auth.getSession()).data.session;
+      if (!current) {
+        if (!invitation) throw Error("Guest access is unavailable for this invitation. Sign in or ask the host to enable guest requests.");
+        const result = await supabase.auth.signInAnonymously();
+        if (result.error) throw Error("Guest access could not be established. Anonymous sign-in may be disabled or rate-limited. You can sign in with a Syrka account instead.");
+      }
+      setDemoMode(false);
+      await action({ action: "request_join", display_name: display });
+    } catch(e) { setError(e instanceof Error ? e.message : "Admission request failed."); }
+    finally { setBusy(false); }
   }
   async function exportNotes(format: "docx" | "pdf" | "md" | "txt" | "write") {
     if (!snapshot?.note) return;
@@ -342,6 +404,7 @@ export default function Meeting({
   const consented = !!snapshot?.members
     .filter((m) => m.status === "approved")
     .every((m) => m.consent);
+  const guest = !!snapshot?.me?.is_guest;
   const sourceSuffix = source === "campus" ? "?source=campus" : "";
   const jump = (segment: string) => {
     setTab("transcript");
@@ -402,7 +465,9 @@ export default function Meeting({
         />
       ) : !snapshot ? (
         <section className="session-form">
-          <h1>Join a private session</h1>
+          <h1>{invitation?.title || "Join a private session"}</h1>
+          {invitation && <p>Hosted by {invitation.host_name}. Guests do not need a Syrka account. The host must admit you.</p>}
+          {invitationError && <p role="status">{invitationError}</p>}
           <p>
             Sign in to {source === "campus" ? "Campus" : "Workspace"}, then
             request admission using this meeting link. Course access is verified
@@ -419,13 +484,12 @@ export default function Meeting({
           </label>
           <button
             className="session-primary"
-            disabled={busy || !display.trim() || joinRequested}
-            onClick={() =>
-              void action({ action: "request_join", display_name: display })
-            }
+            disabled={busy || !display.trim() || joinRequested || admissionDenied}
+            onClick={() => void requestAdmission()}
           >
-            {joinRequested ? "Admission requested" : "Request admission"}
+            {admissionDenied ? "Admission declined" : joinRequested ? "Admission requested" : source === "workspace" ? "Ask to join" : "Request admission"}
           </button>
+          <DevicePreview devices={devices} onChange={setDevices} />
           {joinRequested && (
             <p role="status">
               Waiting for the host to admit you. This invitation opens
@@ -528,7 +592,7 @@ export default function Meeting({
               />
             </label>
             <p>
-              Only authenticated, admitted participants can obtain a room token.
+              Only admitted participants with a secure account or guest identity can obtain a room token.
               A link does not grant access.
             </p>
           </details>
@@ -548,6 +612,8 @@ export default function Meeting({
                   panelOpen={panelOpen}
                   onTogglePanel={() => setPanelOpen((p) => !p)}
                   onInvite={() => void copyInvite()}
+                  devices={devices}
+                  panelLabel={guest ? "Consent" : "Notes"}
                   speechLanguages={snapshot.capabilities.speechLanguages}
                   speechFormat={snapshot.capabilities.speechFormat}
                   token={token.token}
@@ -594,16 +660,17 @@ export default function Meeting({
                         />
                       </label>
                     )}
+                    <DevicePreview devices={devices} onChange={setDevices} />
                   </div>
                   {snapshot.capabilities.video &&
                     snapshot.room.status !== "ended" &&
                     snapshot.me?.status === "approved" && (
                       <button
                         className="session-primary"
-                        disabled={busy}
+                        disabled={busy || callStarting}
                         onClick={() => void connect()}
                       >
-                        {host ? "Start / join meeting" : "Join meeting"}
+                        {callStarting ? "Starting call…" : host ? snapshot.room.status === "live" ? "Rejoin call" : "Start call" : "Join meeting"}
                       </button>
                     )}
                 </div>
@@ -618,7 +685,7 @@ export default function Meeting({
             >
               <summary>
                 <PanelRight size={16} />
-                Transcript, notes & host controls
+                {guest ? "Transcription consent" : "Transcript, notes & host controls"}
               </summary>
               <div className="session-panel-content">
                 {snapshot.me?.status === "approved" && (
@@ -645,6 +712,8 @@ export default function Meeting({
                     subject to the retention policy.
                   </label>
                 )}
+                {guest && <p>Guest access is limited to this meeting. Private transcripts and Workspace Notes remain with the host.</p>}
+                {!guest && <>
                 {host && (
                   <details
                     className="session-host"
@@ -655,6 +724,10 @@ export default function Meeting({
                       Host controls
                     </summary>
                     <div className="session-actions">
+                      {source === "workspace" && <label><input type="checkbox" checked={!!snapshot.room.allow_guests}
+                        onChange={e => void action({action: "host_update", patch: {allow_guests: e.target.checked}})} />
+                        Allow new guest requests (no account required)
+                      </label>}
                       <label>
                         <input
                           type="checkbox"
@@ -715,7 +788,7 @@ export default function Meeting({
                           }
                         />
                       </label>
-                      {snapshot.room.status === "live" && (
+                      {snapshot.room.status !== "ended" && (
                         <button
                           onClick={() => {
                             if (
@@ -753,7 +826,7 @@ export default function Meeting({
                     {snapshot.members.map((member) => (
                       <div className="session-member" key={member.user_id}>
                         <span>
-                          {member.display_name} · {member.status} ·{" "}
+                          {member.display_name}{member.is_guest ? " (guest)" : ""} · {member.status} ·{" "}
                           {member.consent ? "consented" : "not consented"}
                         </span>
                         {member.user_id !== snapshot.room.owner_id && (
@@ -788,6 +861,11 @@ export default function Meeting({
                                   : "Allow publishing"}
                               </button>
                             )}
+                            {member.status === "approved" && <button disabled={busy} onClick={() => {
+                              void action({action: "mute_member", user_id: member.user_id}, false).then(result => {
+                                if (result) setCallNotice(result.muted ? "Participant microphone muted. They can choose to unmute again." : "This participant has no active microphone to mute.");
+                              });
+                            }}>Mute microphone</button>}
                             <button
                               disabled={busy}
                               onClick={() =>
@@ -798,7 +876,7 @@ export default function Meeting({
                                 })
                               }
                             >
-                              Remove
+                              {member.status === "waiting" ? "Deny" : "Remove"}
                             </button>
                           </>
                         )}
@@ -1531,6 +1609,7 @@ export default function Meeting({
                       </article>
                     ))}
                 </section>
+                </>}
               </div>
             </details>
           </div>

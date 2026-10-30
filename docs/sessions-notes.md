@@ -1,3 +1,5 @@
+> Instant calling and guest admission: [implementation and current gates](sessions-instant-guests.md).
+
 > Latest calling/UI and Qwen regression status: [Sessions calling acceptance](sessions-calling.md). Historical results below are dated.
 
 # Syrka Sessions and Notes — feature branch release record

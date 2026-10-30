@@ -7,7 +7,7 @@ import {
 import { providerFailure } from "./qwen";
 import { createHash, randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
+import { AccessToken, RoomServiceClient, TrackType } from "livekit-server-sdk";
 import { z } from "zod";
 import {
   roomInput,
@@ -165,8 +165,8 @@ export async function sessionsHandler(
               .eq("user_id", ctx.user.id)
               .maybeSingle(),
           ).data;
-          if (own?.status === "waiting")
-            return json({ admission: "waiting", user_id: ctx.user.id });
+          if (own?.status === "waiting" || own?.status === "removed")
+            return json({ admission: own.status, user_id: ctx.user.id });
         }
         throw error;
       }
@@ -177,8 +177,8 @@ export async function sessionsHandler(
           await ctx.db.from("session_members").select("status")
             .eq("room_id", id).eq("user_id", ctx.user.id).maybeSingle(),
         ).data;
-        if (own?.status === "waiting")
-          return json({ admission: "waiting", user_id: ctx.user.id });
+        if (own?.status === "waiting" || own?.status === "removed")
+          return json({ admission: own.status, user_id: ctx.user.id });
       }
       const [members, segments, note, jobs, cards, annotations] =
         await Promise.all([
@@ -287,6 +287,7 @@ export async function sessionsHandler(
           institution_id: data.institution_id,
           offering_id: data.offering_id,
           project: data.project,
+          ...(ctx.source === "workspace" ? { allow_guests: data.allow_guests } : {}),
         });
       }
       const result = check(
@@ -357,6 +358,7 @@ export async function sessionsHandler(
           title: z.string().min(1).max(160).optional(),
           description: z.string().max(4000).optional(),
           locked: z.boolean().optional(),
+          ...(ctx.source === "workspace" ? { allow_guests: z.boolean().optional() } : {}),
           status: z.enum(["scheduled", "live", "ended"]).optional(),
           transcribing: z.boolean().optional(),
           transcript_published: z.boolean().optional(),
@@ -381,6 +383,21 @@ export async function sessionsHandler(
       }
       check(await ctx.db.from("session_rooms").update(patch).eq("id", id));
       return json({ ok: true });
+    }
+    if (action === "mute_member") {
+      host(ctx, room);
+      const userId = z.uuid().parse(input.user_id);
+      const member = check(await ctx.db.from("session_members").select("status")
+        .eq("room_id", id).eq("user_id", userId).maybeSingle()).data;
+      if (member?.status !== "approved") throw new HttpError(403, "Participant is not admitted.");
+      if (!capabilities().video) throw new HttpError(503, "Calling is unavailable.");
+      try {
+        const service = media(), identity = `${ctx.source}:${userId}`, name = mediaRoom(ctx, id);
+        const participant = await service.getParticipant(name, identity);
+        const tracks = participant.tracks.filter(track => track.type === TrackType.AUDIO && !track.muted);
+        await Promise.all(tracks.map(track => service.mutePublishedTrack(name, identity, track.sid, true)));
+        return json({ muted: tracks.length });
+      } catch { throw new HttpError(503, "The participant’s microphone could not be muted. They may be offline; try again."); }
     }
     if (action === "member_update") {
       host(ctx, room);

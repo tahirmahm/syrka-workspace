@@ -84,7 +84,7 @@ for (const viewport of [
   }) => {
     await page.setViewportSize(viewport);
     await fixture(page);
-    await page.getByRole("button", { name: "Start / join meeting" }).click();
+    await page.getByRole("button", { name: "Start call" }).click();
     const frame = page.locator(".session-call-frame");
     await expect(frame).toBeVisible();
     await page.screenshot({
@@ -175,7 +175,7 @@ test("loss of application authorization cancels the call and clears private meet
   page,
 }) => {
   await fixture(page);
-  await page.getByRole("button", { name: "Start / join meeting" }).click();
+  await page.getByRole("button", { name: "Start call" }).click();
   await expect(page.locator(".session-call-frame")).toBeVisible();
   await page.unroute("**/workspace/api/sessions**");
   await page.route("**/workspace/api/sessions**", (route) =>

@@ -2,9 +2,9 @@
   "protocol": 1,
   "source": "tahirmahm/syrka-workspace",
   "files": {
-    "model.ts": "ffbe802c36ce3ad084567e61a47e7461f60590b4ade473c829b2dfb7a8a00db8",
+    "model.ts": "6321e29a98b52fdcf41bd5f4d32903e678f842c338f6065a162cdd03f7a2e74a",
     "providers.ts": "5744d941be1047fbeaae79efbbac1798ddbc7d4f22f380955f56e54aa622f62d",
-    "server.ts": "ad7f7ccdb666392ce773567e3d9c5714da8f62fd7be9b3d1ede41e0d07ae8ff7",
+    "server.ts": "224a3c650ee0820621d561ff36af6c95e33a9b967e4b80944fa47982e2b89f4f",
     "transcripts.ts": "43a1a2466eec6180742346abc430142e5ebd1c2ee2e50f3e5c55a332a22b5047",
     "qwen.ts": "2b56fe5fbb7302d5a9222b06781794a742ab7802e224fab0593e86c261e3b194",
     "qwen-realtime.ts": "d35f24f730055b37794889e6e07120d03d0bb8302114cce08243127f658c6570",

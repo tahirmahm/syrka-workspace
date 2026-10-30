@@ -92,7 +92,7 @@ test("waiting, removed and ended sessions cannot mint media tokens", async () =>
   expect((await mint("removed")).status).toBe(403);
   expect((await mint("approved", true, true)).status).toBe(409);
 });
-test.each([false, true])("pending guests receive only admission status even when invitation row is visible: %s", async (visible) => {
+test.each([[false, "waiting"], [true, "waiting"], [false, "removed"], [true, "removed"]])("pending/removed guests receive only admission status (visible %s, status %s)", async (visible, status) => {
   const db = {
     from(table: string) {
       const query = {
@@ -103,7 +103,7 @@ test.each([false, true])("pending guests receive only admission status even when
           return query;
         },
         maybeSingle: async () => ({
-          data: table === "session_members" ? { status: "waiting" } : visible ? { id: roomId, owner_id: "another-host" } : null,
+          data: table === "session_members" ? { status } : visible ? { id: roomId, owner_id: "another-host" } : null,
           error: null,
         }),
       };
@@ -117,7 +117,7 @@ test.each([false, true])("pending guests receive only admission status even when
   );
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual({
-    admission: "waiting",
+    admission: status,
     user_id: actor,
   });
 });

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Video,
   NotebookPen,
@@ -17,7 +18,7 @@ import {
   type Capabilities,
   type SearchHit,
 } from "@/lib/sessions/model";
-import { setDemoMode, isDemoMode } from "@/lib/storage";
+import { supabase, cloudConfigError, setDemoMode, isDemoMode } from "@/lib/storage";
 export default function SessionsDashboard({
   mode = "sessions",
   source = "workspace",
@@ -25,6 +26,7 @@ export default function SessionsDashboard({
   mode?: "sessions" | "notes";
   source?: SessionSource;
 }) {
+  const router = useRouter();
   const [rooms, setRooms] = useState<SessionRoom[]>([]);
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [error, setError] = useState("");
@@ -79,6 +81,10 @@ export default function SessionsDashboard({
     setBusy(true);
     const f = new FormData(event.currentTarget);
     try {
+      if (source === "workspace" && isDemoMode() && supabase) {
+        const current = (await supabase.auth.getSession()).data.session;
+        if (current && !current.user.is_anonymous) setDemoMode(false);
+      }
       const result = await sessionsApi(source, {
         action: "create",
         data: {
@@ -99,6 +105,25 @@ export default function SessionsDashboard({
     } finally {
       setBusy(false);
     }
+  }
+  async function startCall() {
+    setBusy(true); setError("");
+    try {
+      if (!supabase) throw Error(cloudConfigError || "Workspace cloud calling is unavailable.");
+      const { data, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw Error("Your sign-in could not be restored. Reconnect or sign in again.");
+      const session = data.session;
+      if (!session || session.user.is_anonymous) throw Error("Sign in to Workspace to start a real call. Fictional demo meetings cannot place calls.");
+      setDemoMode(false);
+      const result = await sessionsApi(source, { action: "create", data: {
+        title: "Instant meeting", description: "", starts_at: new Date().toISOString(),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, allow_guests: true,
+      }});
+      const room = result.rooms?.[0];
+      if (!room?.id) throw Error("The meeting could not be created. Try again.");
+      router.push(`/sessions/meeting/${room.id}?start=1`);
+    } catch(e) { setError(e instanceof Error ? e.message : "The call could not start."); }
+    finally { setBusy(false); }
   }
   const suffix = source === "campus" ? "?source=campus" : "";
   return (
@@ -128,7 +153,7 @@ export default function SessionsDashboard({
       {error && (
         <div className="error" role="alert">
           {error}
-          <Link href="/">Sign in to Workspace</Link>
+          <Link href="/" onClick={() => setDemoMode(false)}>Sign in to Workspace</Link>
           {source === "workspace" && (
             <button
               onClick={() => {
@@ -158,13 +183,17 @@ export default function SessionsDashboard({
       )}
       <div className="session-actions">
         {mode === "sessions" && source === "workspace" && (
+          <>
+          <button className="session-primary" disabled={busy} onClick={() => void startCall()}><Video size={17}/>{busy ? "Starting call…" : "Start call"}</button>
           <button
+            disabled={busy}
             className="session-primary"
             onClick={() => setCreating(!creating)}
           >
             <Plus size={17} />
-            New / schedule meeting
+            New meeting
           </button>
+          </>
         )}
         <label className="tools-search">
           <Search size={18} />
@@ -178,7 +207,7 @@ export default function SessionsDashboard({
       </div>
       {creating && (
         <form className="session-form" onSubmit={create}>
-          <h2>Schedule a meeting</h2>
+          <h2>{source === "workspace" && isDemoMode() ? "Schedule a fictional example" : "Schedule a meeting"}</h2>
           <label>
             Title
             <input name="title" required maxLength={160} />

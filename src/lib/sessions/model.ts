@@ -11,6 +11,7 @@ export const languages = [
 ] as const;
 export type SessionSource = "workspace" | "campus";
 export const roomInput = z.object({
+  allow_guests: z.boolean().default(true),
   title: z.string().trim().min(1).max(160),
   description: z.string().max(4000).default(""),
   starts_at: z.iso.datetime({ offset: true }),
@@ -36,6 +37,7 @@ export type SessionRoom = {
   project: string;
   status: "scheduled" | "live" | "ended";
   locked: boolean;
+  allow_guests?: boolean;
   transcribing: boolean;
   transcript_published: boolean;
   created_at: string;
@@ -48,6 +50,7 @@ export type Member = {
   status: "waiting" | "approved" | "removed";
   consent: boolean;
   can_publish: boolean;
+  is_guest?: boolean;
 };
 export type Segment = {
   id: string;
