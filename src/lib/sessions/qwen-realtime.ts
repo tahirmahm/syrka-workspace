@@ -99,6 +99,8 @@ export async function transcribeRealtimePcm(blob: Blob, language: string) {
               audio: pcm.subarray(offset, offset + 3200).toString("base64"),
             });
           send({ type: "input_audio_buffer.commit" });
+        } else if (event.type === "input_audio_buffer.committed") {
+          send({ type: "session.finish" });
         } else if (
           event.type === "conversation.item.input_audio_transcription.completed"
         ) {
@@ -108,9 +110,11 @@ export async function transcribeRealtimePcm(blob: Blob, language: string) {
           )
             throw Error("Invalid live transcription response.");
           final += event.transcript;
-          send({ type: "session.finish" });
         } else if (event.type === "session.finished") finish();
-        else if (event.type === "error")
+        else if (
+          event.type === "error" ||
+          event.type === "conversation.item.input_audio_transcription.failed"
+        )
           finish(
             new QwenRequestError(
               400,
