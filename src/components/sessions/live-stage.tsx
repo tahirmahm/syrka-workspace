@@ -35,11 +35,12 @@ import {
   X,
 } from "lucide-react";
 import "@livekit/components-styles";
-import { endpoint, sessionHeaders } from "@/lib/sessions/client";
+import { endpoint, sessionHeaders, scopedGuestEndpoint } from "@/lib/sessions/client";
 import { capturePcm } from "@/lib/sessions/pcm";
 import type { CallDevices } from "./device-preview";
 import type { SessionSource } from "@/lib/sessions/model";
 function SpeechCapture({
+  guestAccess = false,
   enabled,
   source,
   roomId,
@@ -48,6 +49,7 @@ function SpeechCapture({
   speechFormat,
   onError,
 }: {
+  guestAccess?: boolean;
   enabled: boolean;
   source: SessionSource;
   roomId: string;
@@ -89,7 +91,7 @@ function SpeechCapture({
           form.append("audio", blob, "microphone.pcm");
           void sessionHeaders(source)
             .then((headers) =>
-              fetch(endpoint(source), {
+              fetch(guestAccess ? scopedGuestEndpoint : endpoint(source), {
                 method: "POST",
                 headers,
                 body: form,
@@ -186,7 +188,7 @@ function SpeechCapture({
         form.append("audio", blob, "track.webm");
         void sessionHeaders(source)
           .then((headers) =>
-            fetch(endpoint(source), {
+            fetch(guestAccess ? scopedGuestEndpoint : endpoint(source), {
               method: "POST",
               headers,
               body: form,
@@ -223,6 +225,7 @@ function SpeechCapture({
     };
   }, [
     enabled,
+    guestAccess,
     isMicrophoneEnabled,
     localParticipant,
     source,
@@ -625,7 +628,9 @@ export default function LiveStage({
   onConnected,
   devices = {},
   panelLabel = "Notes",
+  guestAccess = false,
 }: {
+  guestAccess?: boolean;
   devices?: CallDevices;
   panelLabel?: string;
   onConnected: () => void;
@@ -705,6 +710,7 @@ export default function LiveStage({
             onError={setError}
           />
           <SpeechCapture
+            guestAccess={guestAccess}
             source={source}
             roomId={roomId}
             language={language}

@@ -12,6 +12,7 @@ import {
   ChevronRight,
   ShieldCheck,
   Video,
+  Menu,
 } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,9 @@ export function ToolsShell({
   application?: "tools" | "sessions";
 }) {
   return (
-    <div className="office">
+    <div
+      className={`office ${application === "sessions" ? "sessions-shell" : ""}`}
+    >
       <aside className="sidebar">
         <Link href="/" className="brand" aria-label="Syrka Workspace">
           <Brand />
@@ -126,6 +129,39 @@ export function ToolsShell({
             <ShieldCheck size={15} />
             Private by design
           </span>
+          {application === "sessions" && (
+            <details className="sessions-mobile-menu">
+              <summary aria-label="Workspace navigation">
+                <Menu size={20} />
+              </summary>
+              <nav aria-label="Mobile Workspace navigation">
+                <Link href="/">
+                  <Home size={18} />
+                  Workspace home
+                </Link>
+                <Link href="/?app=doc">
+                  <FileText size={18} />
+                  Write
+                </Link>
+                <Link href="/?app=sheet">
+                  <Table2 size={18} />
+                  Tables
+                </Link>
+                <Link href="/?app=slides">
+                  <Presentation size={18} />
+                  Present
+                </Link>
+                <Link href="/sessions" aria-current="page">
+                  <Video size={18} />
+                  Sessions
+                </Link>
+                <Link href="/tools">
+                  <ToolPictogram name="tools" size={18} />
+                  Tools
+                </Link>
+              </nav>
+            </details>
+          )}
         </header>
         <main className="dashboard tools-dashboard">
           {children}

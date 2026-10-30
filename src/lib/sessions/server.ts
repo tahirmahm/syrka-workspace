@@ -78,7 +78,7 @@ export function isMediaMissing(error: unknown) {
     (!e.status && /not[ _-]?found|does not exist/i.test(e.message || ""))
   );
 }
-function validatedMediaUrl() {
+export function validatedMediaUrl() {
   let url: URL;
   try {
     url = new URL(process.env.LIVEKIT_URL || "");
@@ -97,7 +97,7 @@ function validatedMediaUrl() {
     throw new HttpError(503, "LiveKit requires a secure URL.");
   return url;
 }
-function media() {
+export function media() {
   if (!capabilities().video)
     throw new HttpError(503, "LiveKit is not configured.");
   const url = validatedMediaUrl();
@@ -174,13 +174,17 @@ export async function sessionsHandler(
       // must receive only their own admission status from the application API.
       if (room.owner_id !== ctx.user.id) {
         const own = check(
-          await ctx.db.from("session_members").select("status")
-            .eq("room_id", id).eq("user_id", ctx.user.id).maybeSingle(),
+          await ctx.db
+            .from("session_members")
+            .select("status")
+            .eq("room_id", id)
+            .eq("user_id", ctx.user.id)
+            .maybeSingle(),
         ).data;
         if (own?.status === "waiting" || own?.status === "removed")
           return json({ admission: own.status, user_id: ctx.user.id });
       }
-      const [members, segments, note, jobs, cards, annotations] =
+      const [members, segments, note, jobs, cards, annotations, guests] =
         await Promise.all([
           ctx.db.from("session_members").select("*").eq("room_id", id),
           ctx.db
@@ -221,11 +225,16 @@ export async function sessionsHandler(
             .eq("room_id", id)
             .eq("user_id", ctx.user.id)
             .maybeSingle(),
+          ctx.source === "workspace"
+            ? ctx.db.rpc("session_guest_members", { room: id })
+            : Promise.resolve({ data: [], error: null }),
         ]);
-      [members, segments, note, jobs, cards, annotations].forEach(check);
+      [members, segments, note, jobs, cards, annotations, guests].forEach(
+        check,
+      );
       return json({
         room,
-        members: members.data,
+        members: [...(members.data || []), ...(guests.data || [])],
         me: members.data?.find((m) => m.user_id === ctx.user.id) || null,
         segments: segments.data,
         note: note.data,
@@ -287,7 +296,9 @@ export async function sessionsHandler(
           institution_id: data.institution_id,
           offering_id: data.offering_id,
           project: data.project,
-          ...(ctx.source === "workspace" ? { allow_guests: data.allow_guests } : {}),
+          ...(ctx.source === "workspace"
+            ? { allow_guests: data.allow_guests }
+            : {}),
         });
       }
       const result = check(
@@ -358,7 +369,9 @@ export async function sessionsHandler(
           title: z.string().min(1).max(160).optional(),
           description: z.string().max(4000).optional(),
           locked: z.boolean().optional(),
-          ...(ctx.source === "workspace" ? { allow_guests: z.boolean().optional() } : {}),
+          ...(ctx.source === "workspace"
+            ? { allow_guests: z.boolean().optional() }
+            : {}),
           status: z.enum(["scheduled", "live", "ended"]).optional(),
           transcribing: z.boolean().optional(),
           transcript_published: z.boolean().optional(),
@@ -370,6 +383,26 @@ export async function sessionsHandler(
         throw new HttpError(503, "Speech recognition is not configured.");
       if (patch.status === "ended" && capabilities().video) {
         try {
+          if (ctx.source === "workspace") {
+            const guests =
+              check(await ctx.db.rpc("session_guest_members", { room: id }))
+                .data || [];
+            for (const guest of guests) {
+              const horizon = Math.max(
+                Math.floor(Date.now() / 1000) + 300,
+                Math.floor(Date.parse(guest.expires_at) / 1000),
+              );
+              try {
+                await media().removeParticipant(
+                  mediaRoom(ctx, id),
+                  `workspace:guest:${guest.user_id}`,
+                  { revokeTokenTs: BigInt(horizon) },
+                );
+              } catch (e) {
+                if (!isMediaMissing(e)) throw e;
+              }
+            }
+          }
           await media().deleteRoom(mediaRoom(ctx, id));
         } catch (e) {
           if (!isMediaMissing(e))
@@ -384,20 +417,117 @@ export async function sessionsHandler(
       check(await ctx.db.from("session_rooms").update(patch).eq("id", id));
       return json({ ok: true });
     }
+    if (
+      ctx.source === "workspace" &&
+      input.guest_identity === true &&
+      ["member_update", "mute_member"].includes(action)
+    ) {
+      host(ctx, room);
+      const gid = z.uuid().parse(input.user_id);
+      const patch =
+        action === "member_update"
+          ? z
+              .object({
+                status: z.enum(["approved", "removed"]).optional(),
+                can_publish: z.boolean().optional(),
+              })
+              .strict()
+              .parse(input.patch)
+          : {};
+      const guest = check(
+        await ctx.db.rpc("session_guest_manage", {
+          room: id,
+          guest: gid,
+          patch,
+        }),
+      ).data;
+      if (capabilities().video) {
+        const identity = `workspace:guest:${gid}`,
+          name = mediaRoom(ctx, id),
+          service = media();
+        if (action === "mute_member") {
+          if (guest.status !== "approved")
+            throw new HttpError(403, "Guest is not admitted.");
+          try {
+            const participant = await service.getParticipant(name, identity);
+            const audio = participant.tracks.filter(
+              (track) => track.type === TrackType.AUDIO && !track.muted,
+            );
+            await Promise.all(
+              audio.map((track) =>
+                service.mutePublishedTrack(name, identity, track.sid, true),
+              ),
+            );
+            return json({ muted: audio.length });
+          } catch {
+            throw new HttpError(
+              503,
+              "Guest audio could not be muted. They may be offline.",
+            );
+          }
+        }
+        try {
+          if (guest.status === "removed") {
+            const horizon = Math.max(
+              Math.floor(Date.now() / 1000) + 300,
+              Math.floor(Date.parse(guest.expires_at) / 1000),
+            );
+            await service.removeParticipant(name, identity, {
+              revokeTokenTs: BigInt(horizon),
+            });
+          } else if (patch.can_publish !== undefined)
+            await service.updateParticipant(name, identity, {
+              permission: {
+                canPublish: guest.can_publish,
+                canSubscribe: true,
+                canPublishData: true,
+              },
+            });
+        } catch (e) {
+          if (!isMediaMissing(e))
+            throw new HttpError(
+              503,
+              "Guest admission was updated, but media enforcement could not be confirmed. Retry the control.",
+            );
+        }
+      }
+      return json({ ok: true });
+    }
     if (action === "mute_member") {
       host(ctx, room);
       const userId = z.uuid().parse(input.user_id);
-      const member = check(await ctx.db.from("session_members").select("status")
-        .eq("room_id", id).eq("user_id", userId).maybeSingle()).data;
-      if (member?.status !== "approved") throw new HttpError(403, "Participant is not admitted.");
-      if (!capabilities().video) throw new HttpError(503, "Calling is unavailable.");
+      const member = check(
+        await ctx.db
+          .from("session_members")
+          .select("status")
+          .eq("room_id", id)
+          .eq("user_id", userId)
+          .maybeSingle(),
+      ).data;
+      if (member?.status !== "approved")
+        throw new HttpError(403, "Participant is not admitted.");
+      if (!capabilities().video)
+        throw new HttpError(503, "Calling is unavailable.");
       try {
-        const service = media(), identity = `${ctx.source}:${userId}`, name = mediaRoom(ctx, id);
+        const service = media(),
+          identity = `${ctx.source}:${userId}`,
+          name = mediaRoom(ctx, id);
         const participant = await service.getParticipant(name, identity);
-        const tracks = participant.tracks.filter(track => track.type === TrackType.AUDIO && !track.muted);
-        await Promise.all(tracks.map(track => service.mutePublishedTrack(name, identity, track.sid, true)));
+        const tracks = participant.tracks.filter(
+          (track) => track.type === TrackType.AUDIO && !track.muted,
+        );
+        await Promise.all(
+          tracks.map((track) =>
+            service.mutePublishedTrack(name, identity, track.sid, true),
+          ),
+        );
         return json({ muted: tracks.length });
-      } catch { throw new HttpError(503, "The participant’s microphone could not be muted. They may be offline; try again."); }
+      } catch {
+        throw new HttpError(
+          503,
+          "The participant’s microphone could not be muted. They may be offline; try again.",
+        );
+      }
     }
     if (action === "member_update") {
       host(ctx, room);
@@ -417,6 +547,7 @@ export async function sessionsHandler(
             await media().removeParticipant(
               mediaRoom(ctx, id),
               `${ctx.source}:${userId}`,
+              { revokeTokenTs: BigInt(Math.floor(Date.now() / 1000) + 3600) },
             );
           else if (patch.can_publish !== undefined)
             await media().updateParticipant(

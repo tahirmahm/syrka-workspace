@@ -18,6 +18,7 @@ export default async function Session({
   return (
     <ToolsShell application="sessions" cloudData title="Session">
       <Meeting
+        key={id}
         id={id}
         autoStart={query.start === "1"}
         source={query.source === "campus" ? "campus" : "workspace"}

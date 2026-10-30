@@ -100,6 +100,7 @@ async function fixture(page: Page, actor = host, isGuest = false) {
       user_id: actor,
       display_name: isGuest ? "Guest B" : "Host",
       is_guest: isGuest,
+      guest_identity: isGuest,
       status: "approved",
       consent: false,
       can_publish: true,
@@ -183,13 +184,14 @@ test("account-free guest requests admission, waits, then joins with a meeting-on
   await expect(
     page.getByRole("button", { name: "Admission requested", exact: true }),
   ).toBeDisabled();
-  expect(signups).toBe(1);
+  expect(signups).toBe(0);
   expect(calls.request).toBe(1);
   expect(calls.token).toBe(0);
   calls.approved = true;
-  await page
-    .getByRole("button", { name: "Join meeting", exact: true })
-    .click({ timeout: 12000 });
+  // Admission automatically opens the real connection flow; no account signup.
+  await expect(page.locator(".session-call-frame")).toBeVisible({
+    timeout: 12000,
+  });
   await expect(page.locator(".session-call-frame")).toBeVisible();
   expect(calls.token).toBe(1);
   await page
@@ -321,4 +323,43 @@ test("a declined lobby request is visible and cannot mint a media token", async 
   await expect(page.locator(".error[role=alert]")).toContainText(
     "The host declined or removed your admission",
   );
+});
+
+test("mobile guest meeting has full-width content and readable touch-sized error dismissal", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await fixture(page, guest, true);
+  await page.route("**/workspace/api/sessions/guest", async (route) => {
+    if (route.request().method() === "POST")
+      return route.fulfill({
+        status: 429,
+        json: {
+          error:
+            "The waiting room is full. Please ask the host to make space, then try again.",
+        },
+      });
+    return route.fulfill({ status: 401, json: { error: "Ask to join" } });
+  });
+  await page.goto(`/workspace/sessions/meeting/${id}`);
+  await page.getByLabel("Display name", { exact: true }).fill("Mobile guest");
+  await page.getByRole("button", { name: "Ask to join", exact: true }).click();
+  const error = page.locator(".error[role=alert]");
+  await expect(error).toContainText("waiting room is full");
+  await expect(page.locator(".sidebar")).toBeHidden();
+  const form = await page.locator(".session-form").boundingBox();
+  expect(form!.width).toBeGreaterThan(330);
+  const dismiss = error.getByRole("button", { name: "Dismiss", exact: true });
+  expect((await dismiss.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(375);
+  await dismiss.click();
+  await expect(error).toHaveCount(0);
+  await page.getByLabel("Workspace navigation", { exact: true }).click();
+  await expect(
+    page
+      .getByRole("navigation", { name: "Mobile Workspace navigation" })
+      .getByRole("link", { name: "Sessions", exact: true }),
+  ).toBeVisible();
 });

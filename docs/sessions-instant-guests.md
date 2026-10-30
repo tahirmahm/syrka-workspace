@@ -11,11 +11,13 @@ starting or scheduling a meeting clears a stale demo selection; a real invitatio
 uses the cloud path rather than looking up a fictional local room. Demo examples
 remain intentionally available, without simulated participants or media.
 
-Guests use Supabase Anonymous Sign-ins: a temporary authenticated identity without
-registration, email or password. The owner must enable this provider in existing
-Workspace project `zguejzlseldovdssiumn`. This setting was observed disabled during
-implementation; the connected integration cannot change Auth configuration.
-Do not replace the project, add service-role browser keys or bypass admission.
+Guests now use server-managed, meeting-scoped admission records, without Supabase
+Auth signup, registration, email or password. This removes the observed
+`anonymous_provider_disabled` failure rather than depending on an Auth setting.
+The server sets a four-hour opaque HttpOnly, Secure, SameSite=Lax cookie scoped to
+the guest API; only its SHA-256 hash is stored in a private RLS-protected table.
+No service-role key or new environment variable is needed. Existing authenticated
+accounts and older anonymous records remain intact.
 
 The additive guest-admission migration and `20261030180649_sessions_guest_metadata_privacy.sql` are applied to
 Workspace and matches hosted migration history. Existing rooms default to guest
@@ -25,9 +27,10 @@ The only public invitation lookup returns an opted-in meeting title and host dis
 name, with a 60-requests/minute/room budget. Knowing a UUID never grants media access.
 
 Guests enter a name, preview devices locally, request admission and wait. Declined or removed requests are reported explicitly and close any active call. Supabase
-retains its IP signup rate limit; SQL caps guest join attempts and pending members.
-After host approval, the normal server mints a five-minute room/identity/publish-scoped
-LiveKit token. Refresh retains the guest identity; leaving cleans up local media.
+is not contacted for guest authentication. SQL caps new requests (30/room/hour),
+pending guests (10/room), token requests (120/guest/hour), and audio usage.
+After host approval, the guest gateway mints a maximum 60-second room/identity/publish-scoped
+LiveKit token and connects automatically with microphone/camera initially off. Refresh retains the guest identity; leaving cleans up local media.
 Browser device preview is explicitly local, muted, and stopped on selection changes,
 joining or unmount. Selected devices are passed to LiveKit capture defaults. Meeting
 microphone/camera publication still requires the user to enable those controls.
@@ -55,7 +58,7 @@ calling report; no physical microphone/camera/speaker acceptance is claimed.
 
 Manual test on iPhone Safari, Android Chrome and desktop: sign in as host, choose
 Start call, copy invitation, open it without an account in a second browser, choose
-devices, Ask to join, admit from host controls, Join meeting, enable both microphones
+devices, Ask to join, admit from host controls, wait for automatic connection, enable both microphones
 and cameras, verify audible speech and video in both directions, toggle devices,
 share a screen where supported, leave/rejoin as guest, revoke speech consent, then
 end for everyone. With consent, speak fictional test content, generate notes, reopen
@@ -65,15 +68,17 @@ Campus project `pftbpimhyophitfuzcxn` was retried and still returns permission d
 through the connected Supabase integration. No replacement or hosted Campus schema
 changes were made. Campus class-to-dashboard acceptance remains blocked.
 
-Anonymous identities persist in Supabase Auth until explicitly pruned; clearing a
-browser/signing out loses the guest's ability to recover that identity. Existing
-meeting retention/deletion is unchanged. The private invitation rate ledger has explicit deny-all RLS and no client grants.
+New guests create no Auth users. Expired/removed credentials cannot mint tokens;
+clearing cookies loses the guest identity. Private guest records cascade with their
+meeting on deletion; existing retention is unchanged. Removed participants receive
+an explicit LiveKit token revocation timestamp covering the guest credential life.
+Revocation and real media still require actual hosted acceptance evidence. The private invitation rate ledger has explicit deny-all RLS and no client grants.
 The existing leaked-password advisor requires Pro and was not upgraded.
 
 ## Local verification
 
-Workspace lint, TypeScript, 51 unit/database tests, production build, native
-WebSocket masked-frame build smoke and all 51 browser tests passed. These include
+Workspace lint, TypeScript, 55 unit/database tests, production build, native
+WebSocket masked-frame build smoke and all 52 browser tests passed. These include
 instant cloud creation/connection requests despite stale demo state, no anonymous
 or fictional hosting, guest waiting/denial, local device cleanup, mobile layout,
 redirects, notes and the existing Write/Tables/Present/Tools regressions.
@@ -82,7 +87,7 @@ Campus lint, strict TypeScript, 19 unit/database tests, build, native WebSocket 
 and both setup/mobile browser tests passed. Shared helper updates retain Campus
 course authorization and do not apply the Workspace guest migration to Campus.
 
-## Hosted acceptance on the updated source
+## Previous hosted acceptance (before scoped guest replacement)
 
 Application source `438438438e7b6f71eaf6701f68abff9fb9cfa66f` is READY at
 https://syrka-workspace-jxofh8uia-tahirmahmood439wel-gmailcoms-projects.vercel.app/workspace/sessions.
@@ -129,3 +134,30 @@ fallback and paid services were not changed. Sanitized machine-readable evidence
 is committed under `docs/verification/sessions-*-2026-10-30.json`. Only own QA meeting
 records and audio fixtures were removed. Later report-only commits do not change
 application code; the exact exercised application SHA above is retained for audit.
+
+## Scoped guest release verification
+
+Migration `20261030191130_sessions_scoped_guests.sql` is applied to the existing
+Workspace database. The SQL tests cover no Auth-user creation, admission enforcement,
+foreign-room rejection, host-only management, consent, private-data isolation and
+revocation. Browser tests cover automatic connection after admission and full-width
+mobile errors/navigation. Existing desktop navigation is preserved.
+
+Run the actual hosted acceptance separately from mocked browser tests:
+
+```sh
+SYRKA_PREVIEW_URL=https://<git-preview>.vercel.app \
+SYRKA_EXPECTED_SHA=<commit-sha> \
+node scripts/verify-guest-call-preview.mjs
+```
+
+Use the existing ignored QA fixture and origin-scoped Vercel Preview access. This
+probe uses a normally authenticated host and a fresh browser guest, counts Auth
+requests, checks actual LiveKit RTP, and separately replays an unexpired JWT before
+and after host removal. A signaling-only result is not media acceptance. It writes
+private operator evidence to `/tmp/syrka-scoped-guest-preview-acceptance.json`.
+
+Calling is independent of Qwen availability and consent. Guest speech requires
+explicit consent from every admitted participant and a second server-side consent
+check when persisting each result. Guests cannot retrieve private notes/transcripts.
+No paid fallback has been enabled. Hosted results will be recorded after deployment.

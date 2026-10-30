@@ -19,7 +19,7 @@ import {
 import NotesReview from "./notes-review";
 import DevicePreview, { type CallDevices } from "./device-preview";
 import { Auth } from "@/components/auth";
-import { sessionsApi } from "@/lib/sessions/client";
+import { sessionsApi, guestRoomKey } from "@/lib/sessions/client";
 import {
   meetingLink,
   segmentText,
@@ -52,19 +52,31 @@ export default function Meeting({
 }) {
   const router = useRouter();
   const [devices, setDevices] = useState<CallDevices>({});
-  const [invitation, setInvitation] = useState<{title: string; host_name: string} | null>(null);
+  const [invitation, setInvitation] = useState<{
+    title: string;
+    host_name: string;
+  } | null>(null);
   const [invitationError, setInvitationError] = useState("");
   const [callStarting, setCallStarting] = useState(false);
-  const connectInFlight = useRef(false), autoStarted = useRef(false);
+  const connectInFlight = useRef(false),
+    autoStarted = useRef(false),
+    autoJoinedGuest = useRef(false);
   useEffect(() => {
     if (source !== "workspace" || !supabase) return;
     let active = true;
-    void supabase.rpc("session_invitation", {room: id}).then(({ data, error }) => {
-      if (!active) return;
-      if (error) setInvitationError("Guest invitation details are unavailable. You can sign in or try requesting admission.");
-      else setInvitation(data);
-    });
-    return () => { active = false; };
+    void supabase
+      .rpc("session_invitation", { room: id })
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error)
+          setInvitationError(
+            "Guest invitation details are unavailable. You can sign in or try requesting admission.",
+          );
+        else setInvitation(data);
+      });
+    return () => {
+      active = false;
+    };
   }, [id, source]);
   const [clock, setClock] = useState(() => Date.now());
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
@@ -76,6 +88,7 @@ export default function Meeting({
   const [signingIn, setSigningIn] = useState(false);
   const [joinRequested, setJoinRequested] = useState(false);
   const [admissionDenied, setAdmissionDenied] = useState(false);
+  const [meetingClosed, setMeetingClosed] = useState(false);
   const [speechPaused, setSpeechPaused] = useState(false);
   const [callNotice, setCallNotice] = useState("");
   const [origin, setOrigin] = useState("");
@@ -125,12 +138,30 @@ export default function Meeting({
           id,
           after,
         )) as Snapshot & {
-          admission?: "waiting" | "removed";
+          admission?: "waiting" | "removed" | "ended";
           annotations?: { body: string; folder: string; bookmarked: boolean };
         };
+        if (result.admission === "ended") {
+          setMeetingClosed(true);
+          setAdmissionDenied(true);
+          setJoinRequested(false);
+          setToken(null);
+          setSnapshot(null);
+          setSpeechPaused(true);
+          setError(
+            "The host ended this meeting. Audio and video are disconnected.",
+          );
+          return;
+        }
         if (result.admission === "removed") {
-          setAdmissionDenied(true); setJoinRequested(false); setToken(null); setSnapshot(null); setSpeechPaused(true);
-          setError("The host declined or removed your admission. Contact the host before trying to rejoin.");
+          setAdmissionDenied(true);
+          setJoinRequested(false);
+          setToken(null);
+          setSnapshot(null);
+          setSpeechPaused(true);
+          setError(
+            "The host declined or removed your admission. Contact the host before trying to rejoin.",
+          );
           return;
         }
         setAdmissionDenied(false);
@@ -143,7 +174,9 @@ export default function Meeting({
         setJoinRequested(false);
         if (result.room.status === "ended" && activeCall.current) {
           setToken(null);
-          setCallNotice("The host ended this meeting. Audio and video have disconnected.");
+          setCallNotice(
+            "The host ended this meeting. Audio and video have disconnected.",
+          );
         }
         setClock(Date.now());
         setSnapshot((old) => ({
@@ -170,8 +203,15 @@ export default function Meeting({
         }
         setError("");
       } catch (e) {
-        if (source === "workspace" && !latest.current && !activeCall.current &&
-            e && typeof e === "object" && "status" in e && e.status === 401) {
+        if (
+          source === "workspace" &&
+          !latest.current &&
+          !activeCall.current &&
+          e &&
+          typeof e === "object" &&
+          "status" in e &&
+          e.status === 401
+        ) {
           setError("");
           return;
         }
@@ -219,21 +259,24 @@ export default function Meeting({
     );
     return () => clearTimeout(timer);
   }, [snapshot]);
-  const action = useCallback(async (payload: Record<string, unknown>, refresh = true) => {
-    setBusy(true);
-    setError("");
-    try {
-      const result = await sessionsApi(source, { ...payload, roomId: id });
-      if (payload.action === "request_join") setJoinRequested(true);
-      if (refresh) await load(true);
-      return result;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      return null;
-    } finally {
-      setBusy(false);
-    }
-  }, [source, id, load]);
+  const action = useCallback(
+    async (payload: Record<string, unknown>, refresh = true) => {
+      setBusy(true);
+      setError("");
+      try {
+        const result = await sessionsApi(source, { ...payload, roomId: id });
+        if (payload.action === "request_join") setJoinRequested(true);
+        if (refresh) await load(true);
+        return result;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        return null;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [source, id, load],
+  );
   useEffect(() => {
     const job = snapshot?.jobs.find(
       (j) => j.kind === "filetrans" && j.state === "running",
@@ -339,33 +382,68 @@ export default function Meeting({
       if (result) setToken(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : "The call could not start.");
-    } finally { connectInFlight.current = false; setCallStarting(false); }
+    } finally {
+      connectInFlight.current = false;
+      setCallStarting(false);
+    }
   }, [snapshot, display, action]);
   useEffect(() => {
-    if (!autoStart || autoStarted.current || !snapshot ||
-        snapshot.room.owner_id !== snapshot.user_id || snapshot.me?.status !== "approved") return;
+    if (
+      !autoStart ||
+      autoStarted.current ||
+      !snapshot ||
+      snapshot.room.owner_id !== snapshot.user_id ||
+      snapshot.me?.status !== "approved"
+    )
+      return;
     autoStarted.current = true;
     if (!snapshot.capabilities.video || snapshot.room.status === "ended") {
-      setCallNotice("Calling is unavailable for this meeting. Check service availability or try another meeting.");
+      setCallNotice(
+        "Calling is unavailable for this meeting. Check service availability or try another meeting.",
+      );
       return;
     }
     void connect();
   }, [autoStart, snapshot, connect]);
+  useEffect(() => {
+    if (
+      !snapshot?.me?.guest_identity ||
+      snapshot.me.status !== "approved" ||
+      snapshot.room.status === "ended" ||
+      token ||
+      autoJoinedGuest.current
+    )
+      return;
+    autoJoinedGuest.current = true;
+    void connect();
+  }, [snapshot, token, connect]);
   async function requestAdmission() {
-    if (source === "campus") { await action({ action: "request_join", display_name: display }); return; }
-    setBusy(true); setError("");
+    if (source === "campus") {
+      await action({ action: "request_join", display_name: display });
+      return;
+    }
+    setBusy(true);
+    setError("");
     try {
-      if (!supabase) throw Error("Workspace cloud is unavailable. Try again after configuration is restored.");
+      if (!supabase)
+        throw Error(
+          "Workspace cloud is unavailable. Try again after configuration is restored.",
+        );
       const current = (await supabase.auth.getSession()).data.session;
-      if (!current) {
-        if (!invitation) throw Error("Guest access is unavailable for this invitation. Sign in or ask the host to enable guest requests.");
-        const result = await supabase.auth.signInAnonymously();
-        if (result.error) throw Error("Guest access could not be established. Anonymous sign-in may be disabled or rate-limited. You can sign in with a Syrka account instead.");
+      if (!current || current.user.is_anonymous) {
+        if (!invitation)
+          throw Error(
+            "Guest access is unavailable for this invitation. Ask the host to enable guest requests.",
+          );
+        sessionStorage.setItem(guestRoomKey(id), "true");
       }
       setDemoMode(false);
       await action({ action: "request_join", display_name: display });
-    } catch(e) { setError(e instanceof Error ? e.message : "Admission request failed."); }
-    finally { setBusy(false); }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Admission request failed.");
+    } finally {
+      setBusy(false);
+    }
   }
   async function exportNotes(format: "docx" | "pdf" | "md" | "txt" | "write") {
     if (!snapshot?.note) return;
@@ -466,12 +544,17 @@ export default function Meeting({
       ) : !snapshot ? (
         <section className="session-form">
           <h1>{invitation?.title || "Join a private session"}</h1>
-          {invitation && <p>Hosted by {invitation.host_name}. Guests do not need a Syrka account. The host must admit you.</p>}
+          {invitation && (
+            <p>
+              Hosted by {invitation.host_name}. Guests do not need a Syrka
+              account. The host must admit you.
+            </p>
+          )}
           {invitationError && <p role="status">{invitationError}</p>}
           <p>
-            Sign in to {source === "campus" ? "Campus" : "Workspace"}, then
-            request admission using this meeting link. Course access is verified
-            by Campus.
+            {source === "campus"
+              ? "Sign in to Campus, then request admission. Course access is verified by Campus."
+              : "Enter your name and ask the host to join. No account is required. Your microphone and camera start off."}
           </p>
           <label>
             Your display name
@@ -484,17 +567,27 @@ export default function Meeting({
           </label>
           <button
             className="session-primary"
-            disabled={busy || !display.trim() || joinRequested || admissionDenied}
+            disabled={
+              busy || !display.trim() || joinRequested || admissionDenied
+            }
             onClick={() => void requestAdmission()}
           >
-            {admissionDenied ? "Admission declined" : joinRequested ? "Admission requested" : source === "workspace" ? "Ask to join" : "Request admission"}
+            {meetingClosed
+              ? "Meeting ended"
+              : admissionDenied
+                ? "Admission declined"
+                : joinRequested
+                  ? "Admission requested"
+                  : source === "workspace"
+                    ? "Ask to join"
+                    : "Request admission"}
           </button>
           <DevicePreview devices={devices} onChange={setDevices} />
           {joinRequested && (
             <p role="status">
               Waiting for the host to admit you. This invitation opens
-              automatically after approval; audio and video stay disconnected
-              until you join.
+              automatically after approval. Your microphone and camera start
+              off.
             </p>
           )}
           {source === "workspace" ? (
@@ -592,8 +685,8 @@ export default function Meeting({
               />
             </label>
             <p>
-              Only admitted participants with a secure account or guest identity can obtain a room token.
-              A link does not grant access.
+              Only admitted participants with a secure account or guest identity
+              can obtain a room token. A link does not grant access.
             </p>
           </details>
           <div
@@ -612,6 +705,7 @@ export default function Meeting({
                   panelOpen={panelOpen}
                   onTogglePanel={() => setPanelOpen((p) => !p)}
                   onInvite={() => void copyInvite()}
+                  guestAccess={!!snapshot.me?.guest_identity}
                   devices={devices}
                   panelLabel={guest ? "Consent" : "Notes"}
                   speechLanguages={snapshot.capabilities.speechLanguages}
@@ -670,7 +764,13 @@ export default function Meeting({
                         disabled={busy || callStarting}
                         onClick={() => void connect()}
                       >
-                        {callStarting ? "Starting call…" : host ? snapshot.room.status === "live" ? "Rejoin call" : "Start call" : "Join meeting"}
+                        {callStarting
+                          ? "Starting call…"
+                          : host
+                            ? snapshot.room.status === "live"
+                              ? "Rejoin call"
+                              : "Start call"
+                            : "Join meeting"}
                       </button>
                     )}
                 </div>
@@ -685,7 +785,9 @@ export default function Meeting({
             >
               <summary>
                 <PanelRight size={16} />
-                {guest ? "Transcription consent" : "Transcript, notes & host controls"}
+                {guest
+                  ? "Transcription consent"
+                  : "Transcript, notes & host controls"}
               </summary>
               <div className="session-panel-content">
                 {snapshot.me?.status === "approved" && (
@@ -712,904 +814,984 @@ export default function Meeting({
                     subject to the retention policy.
                   </label>
                 )}
-                {guest && <p>Guest access is limited to this meeting. Private transcripts and Workspace Notes remain with the host.</p>}
-                {!guest && <>
-                {host && (
-                  <details
-                    className="session-host"
-                    open={token && panelOpen ? true : undefined}
-                  >
-                    <summary>
-                      <ShieldCheck size={16} />
-                      Host controls
-                    </summary>
-                    <div className="session-actions">
-                      {source === "workspace" && <label><input type="checkbox" checked={!!snapshot.room.allow_guests}
-                        onChange={e => void action({action: "host_update", patch: {allow_guests: e.target.checked}})} />
-                        Allow new guest requests (no account required)
-                      </label>}
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={snapshot.room.locked}
-                          onChange={(e) =>
-                            void action({
-                              action: "host_update",
-                              patch: { locked: e.target.checked },
-                            })
-                          }
-                        />
-                        Lock new admission requests
-                      </label>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={snapshot.room.transcript_published}
-                          onChange={(e) =>
-                            void action({
-                              action: "host_update",
-                              patch: { transcript_published: e.target.checked },
-                            })
-                          }
-                        />
-                        Share transcript with the authorized audience
-                      </label>
-                      {snapshot.capabilities.stt && (
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={snapshot.room.transcribing}
-                            disabled={
-                              !consented || snapshot.room.status === "ended"
-                            }
-                            onChange={(e) =>
-                              void action({
-                                action: "host_update",
-                                patch: { transcribing: e.target.checked },
-                              })
-                            }
-                          />
-                          Enable near-real-time transcription (all participants
-                          must consent)
-                        </label>
-                      )}
-                      <label>
-                        Transcript access retention (days)
-                        <input
-                          type="number"
-                          min={1}
-                          max={365}
-                          defaultValue={snapshot.room.retention_days}
-                          onBlur={(e) =>
-                            void action({
-                              action: "host_update",
-                              patch: { retention_days: Number(e.target.value) },
-                            })
-                          }
-                        />
-                      </label>
-                      {snapshot.room.status !== "ended" && (
-                        <button
-                          onClick={() => {
-                            if (
-                              confirm("End this session for every participant?")
-                            )
-                              void action({
-                                action: "host_update",
-                                patch: { status: "ended" },
-                              });
-                          }}
-                        >
-                          End for everyone
-                        </button>
-                      )}
-                      <button
-                        onClick={() => {
-                          if (
-                            confirm(
-                              "Delete this session, its transcript, notes and personal revision materials?",
-                            )
-                          )
-                            void action({ action: "delete" }).then((result) => {
-                              if (result)
-                                router.push("/sessions" + sourceSuffix);
-                            });
-                        }}
+                {guest && (
+                  <p>
+                    Guest access is limited to this meeting. Private transcripts
+                    and Workspace Notes remain with the host.
+                  </p>
+                )}
+                {!guest && (
+                  <>
+                    {host && (
+                      <details
+                        className="session-host"
+                        open={token && panelOpen ? true : undefined}
                       >
-                        Delete records
-                      </button>
-                    </div>
-                    <h3>
-                      <Users size={16} />
-                      Participants & waiting room
-                    </h3>
-                    {snapshot.members.map((member) => (
-                      <div className="session-member" key={member.user_id}>
-                        <span>
-                          {member.display_name}{member.is_guest ? " (guest)" : ""} · {member.status} ·{" "}
-                          {member.consent ? "consented" : "not consented"}
-                        </span>
-                        {member.user_id !== snapshot.room.owner_id && (
-                          <>
-                            {member.status === "waiting" && (
-                              <button
-                                disabled={busy}
-                                onClick={() =>
+                        <summary>
+                          <ShieldCheck size={16} />
+                          Host controls
+                        </summary>
+                        <div className="session-actions">
+                          {source === "workspace" && (
+                            <label>
+                              <input
+                                type="checkbox"
+                                checked={!!snapshot.room.allow_guests}
+                                onChange={(e) =>
                                   void action({
-                                    action: "member_update",
-                                    user_id: member.user_id,
-                                    patch: { status: "approved" },
+                                    action: "host_update",
+                                    patch: { allow_guests: e.target.checked },
                                   })
                                 }
-                              >
-                                Admit
-                              </button>
-                            )}
-                            {member.status === "approved" && (
-                              <button
-                                disabled={busy}
-                                onClick={() =>
-                                  void action({
-                                    action: "member_update",
-                                    user_id: member.user_id,
-                                    patch: { can_publish: !member.can_publish },
-                                  })
-                                }
-                              >
-                                {member.can_publish
-                                  ? "Disable microphone/camera/sharing"
-                                  : "Allow publishing"}
-                              </button>
-                            )}
-                            {member.status === "approved" && <button disabled={busy} onClick={() => {
-                              void action({action: "mute_member", user_id: member.user_id}, false).then(result => {
-                                if (result) setCallNotice(result.muted ? "Participant microphone muted. They can choose to unmute again." : "This participant has no active microphone to mute.");
-                              });
-                            }}>Mute microphone</button>}
-                            <button
-                              disabled={busy}
-                              onClick={() =>
+                              />
+                              Allow new guest requests (no account required)
+                            </label>
+                          )}
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={snapshot.room.locked}
+                              onChange={(e) =>
                                 void action({
-                                  action: "member_update",
-                                  user_id: member.user_id,
-                                  patch: { status: "removed" },
+                                  action: "host_update",
+                                  patch: { locked: e.target.checked },
                                 })
                               }
+                            />
+                            Lock new admission requests
+                          </label>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={snapshot.room.transcript_published}
+                              onChange={(e) =>
+                                void action({
+                                  action: "host_update",
+                                  patch: {
+                                    transcript_published: e.target.checked,
+                                  },
+                                })
+                              }
+                            />
+                            Share transcript with the authorized audience
+                          </label>
+                          {snapshot.capabilities.stt && (
+                            <label>
+                              <input
+                                type="checkbox"
+                                checked={snapshot.room.transcribing}
+                                disabled={
+                                  !consented || snapshot.room.status === "ended"
+                                }
+                                onChange={(e) =>
+                                  void action({
+                                    action: "host_update",
+                                    patch: { transcribing: e.target.checked },
+                                  })
+                                }
+                              />
+                              Enable near-real-time transcription (all
+                              participants must consent)
+                            </label>
+                          )}
+                          <label>
+                            Transcript access retention (days)
+                            <input
+                              type="number"
+                              min={1}
+                              max={365}
+                              defaultValue={snapshot.room.retention_days}
+                              onBlur={(e) =>
+                                void action({
+                                  action: "host_update",
+                                  patch: {
+                                    retention_days: Number(e.target.value),
+                                  },
+                                })
+                              }
+                            />
+                          </label>
+                          {snapshot.room.status !== "ended" && (
+                            <button
+                              onClick={() => {
+                                if (
+                                  confirm(
+                                    "End this session for every participant?",
+                                  )
+                                )
+                                  void action({
+                                    action: "host_update",
+                                    patch: { status: "ended" },
+                                  });
+                              }}
                             >
-                              {member.status === "waiting" ? "Deny" : "Remove"}
+                              End for everyone
                             </button>
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </details>
-                )}
-                <nav className="session-tabs" aria-label="Session views">
-                  {["transcript", "notes", "study", "personal"].map((t) => (
-                    <button
-                      key={t}
-                      aria-pressed={tab === t}
-                      onClick={() => setTab(t)}
-                    >
-                      {
-                        {
-                          transcript: "Transcript",
-                          notes: "Notes",
-                          study: "Revision",
-                          personal: "Personal notes",
-                        }[t]
-                      }
-                    </button>
-                  ))}
-                </nav>
-                {tab === "transcript" && (
-                  <section>
-                    <label className="tools-search">
-                      <Search size={18} />
-                      <input
-                        aria-label="Search transcript"
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        placeholder="Search what was said…"
-                      />
-                    </label>
-                    <div className="session-actions">
-                      {(["txt", "srt", "vtt"] as const).map((format) => (
-                        <button
-                          key={format}
-                          onClick={() =>
-                            download(
-                              format === "txt"
-                                ? transcriptText(snapshot.segments)
-                                : transcriptCaptions(snapshot.segments, format),
-                              `${snapshot.room.title}.${format}`,
-                              "text/plain;charset=utf-8",
-                            )
-                          }
-                        >
-                          <Download size={15} />
-                          {format.toUpperCase()}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="session-transcript">
-                      {snapshot.segments
-                        .filter((s) =>
-                          `${s.speaker_name} ${segmentText(s)}`
-                            .toLowerCase()
-                            .includes(query.toLowerCase()),
-                        )
-                        .map((s) => (
-                          <article
-                            id={"segment-" + s.id}
-                            key={s.id}
-                            className={s.important ? "important" : ""}
+                          )}
+                          <button
+                            onClick={() => {
+                              if (
+                                confirm(
+                                  "Delete this session, its transcript, notes and personal revision materials?",
+                                )
+                              )
+                                void action({ action: "delete" }).then(
+                                  (result) => {
+                                    if (result)
+                                      router.push("/sessions" + sourceSuffix);
+                                  },
+                                );
+                            }}
                           >
-                            <header>
-                              <strong>{s.speaker_name}</strong>
-                              <time>
-                                {timestamp(s.start_ms)}–{timestamp(s.end_ms)}
-                              </time>
-                              <small>
-                                {s.language}
-                                {s.edited_text !== null
-                                  ? " · edited (original preserved)"
-                                  : ""}
-                              </small>
-                            </header>
-                            <p dir="auto">{segmentText(s)}</p>
-                            {host && (
-                              <div>
-                                <button
-                                  onClick={() => {
-                                    const value = prompt(
-                                      "Correct transcript (original is preserved)",
-                                      segmentText(s),
-                                    );
-                                    if (value !== null)
+                            Delete records
+                          </button>
+                        </div>
+                        <h3>
+                          <Users size={16} />
+                          Participants & waiting room
+                        </h3>
+                        {snapshot.members.map((member) => (
+                          <div className="session-member" key={member.user_id}>
+                            <span>
+                              {member.display_name}
+                              {member.is_guest ? " (guest)" : ""} ·{" "}
+                              {member.status} ·{" "}
+                              {member.consent ? "consented" : "not consented"}
+                            </span>
+                            {member.user_id !== snapshot.room.owner_id && (
+                              <>
+                                {member.status === "waiting" && (
+                                  <button
+                                    disabled={busy}
+                                    onClick={() =>
                                       void action({
-                                        action: "edit_segment",
-                                        segment_id: s.id,
-                                        patch: { edited_text: value },
+                                        action: "member_update",
+                                        user_id: member.user_id,
+                                        guest_identity: !!member.guest_identity,
+                                        patch: { status: "approved" },
+                                      })
+                                    }
+                                  >
+                                    Admit
+                                  </button>
+                                )}
+                                {member.status === "approved" && (
+                                  <button
+                                    disabled={busy}
+                                    onClick={() =>
+                                      void action({
+                                        action: "member_update",
+                                        user_id: member.user_id,
+                                        guest_identity: !!member.guest_identity,
+                                        patch: {
+                                          can_publish: !member.can_publish,
+                                        },
+                                      })
+                                    }
+                                  >
+                                    {member.can_publish
+                                      ? "Disable microphone/camera/sharing"
+                                      : "Allow publishing"}
+                                  </button>
+                                )}
+                                {member.status === "approved" && (
+                                  <button
+                                    disabled={busy}
+                                    onClick={() => {
+                                      void action(
+                                        {
+                                          action: "mute_member",
+                                          user_id: member.user_id,
+                                          guest_identity:
+                                            !!member.guest_identity,
+                                        },
+                                        false,
+                                      ).then((result) => {
+                                        if (result)
+                                          setCallNotice(
+                                            result.muted
+                                              ? "Participant microphone muted. They can choose to unmute again."
+                                              : "This participant has no active microphone to mute.",
+                                          );
                                       });
-                                  }}
-                                >
-                                  Correct
-                                </button>
+                                    }}
+                                  >
+                                    Mute microphone
+                                  </button>
+                                )}
                                 <button
+                                  disabled={busy}
                                   onClick={() =>
                                     void action({
-                                      action: "edit_segment",
-                                      segment_id: s.id,
-                                      patch: { important: !s.important },
+                                      action: "member_update",
+                                      user_id: member.user_id,
+                                      guest_identity: !!member.guest_identity,
+                                      patch: { status: "removed" },
                                     })
                                   }
                                 >
-                                  {s.important ? "Unmark" : "Mark important"}
+                                  {member.status === "waiting"
+                                    ? "Deny"
+                                    : "Remove"}
                                 </button>
-                              </div>
+                              </>
                             )}
-                          </article>
+                          </div>
                         ))}
-                    </div>
-                    {!snapshot.segments.length && (
-                      <p className="session-notice">
-                        No shared transcript is available. The host controls
-                        publication and retention.
-                      </p>
-                    )}
-                    {host && snapshot.capabilities.stt && (
-                      <details className="session-form">
-                        <summary>
-                          <Upload size={16} />
-                          Transcribe a permitted audio recording
-                        </summary>
-                        <p>
-                          Private upload, up to 20 MB. Qwen file transcription
-                          returns sentence timestamps. Speaker identities are
-                          unverified. Temporary audio is deleted after
-                          processing; this does not record the current meeting.
-                        </p>
-                        <label className="session-file-picker">
-                          <Upload size={16} />
-                          Audio file
-                          <input
-                            type="file"
-                            className="session-file-input"
-                            accept=".wav,.mp3,.mp4,.webm,.ogg"
-                            onChange={(e) =>
-                              setAudioUpload(e.target.files?.[0] || null)
-                            }
-                          />
-                          <span>
-                            {audioUpload?.name || "Choose an audio recording"}
-                          </span>
-                        </label>
-                        <label>
-                          Recording language
-                          <select
-                            value={audioLanguage}
-                            onChange={(e) => setAudioLanguage(e.target.value)}
-                          >
-                            {(
-                              snapshot.capabilities.speechLanguages || ["en"]
-                            ).map((language) => (
-                              <option key={language}>{language}</option>
-                            ))}
-                          </select>
-                        </label>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={audioPermission}
-                            onChange={(e) =>
-                              setAudioPermission(e.target.checked)
-                            }
-                          />
-                          I have permission from the recorded participants to
-                          upload this audio and process it with Qwen.
-                        </label>
-                        <button
-                          disabled={
-                            busy ||
-                            !audioPermission ||
-                            !audioUpload ||
-                            audioUpload.size > 20971520
-                          }
-                          onClick={() => void uploadAudio()}
-                        >
-                          {busy
-                            ? "Uploading / submitting…"
-                            : "Upload & transcribe"}
-                        </button>
-                        {snapshot.jobs
-                          .filter((j) => j.kind === "filetrans")
-                          .map((j) => (
-                            <p key={j.id} role="status">
-                              Audio transcription: {j.state}
-                              {j.error ? ` — ${j.error}` : ""}
-                            </p>
-                          ))}
                       </details>
                     )}
-                    {host && (
-                      <details className="session-form">
-                        <summary>
-                          <Upload size={16} />
-                          Import a permitted transcript
-                        </summary>
-                        <label>
-                          Format
-                          <select
-                            aria-label="Transcript format"
-                            value={format}
-                            onChange={(e) => setFormat(e.target.value)}
-                          >
-                            {["txt", "srt", "vtt"].map((f) => (
-                              <option key={f}>{f}</option>
-                            ))}
-                          </select>
-                        </label>
-                        <label>
-                          Transcript text
-                          <textarea
-                            aria-label="Transcript import text"
-                            value={imported}
-                            onChange={(e) => setImported(e.target.value)}
-                            maxLength={1000000}
-                          />
-                        </label>
-                        <label className="session-file-picker">
-                          <Upload size={16} />
-                          Or open a file
-                          <input
-                            type="file"
-                            className="session-file-input"
-                            accept=".txt,.srt,.vtt"
-                            onChange={async (e) => {
-                              const f = e.target.files?.[0];
-                              if (f) {
-                                setImported(await f.text());
-                                setFormat(f.name.split(".").pop() || "txt");
-                              }
-                            }}
-                          />
-                        </label>
-                        <p>
-                          Plain text has synthetic line timestamps. Imported
-                          speaker labels are unknown; they are not verified
-                          participant identities.
-                        </p>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={permission}
-                            onChange={(e) => setPermission(e.target.checked)}
-                          />
-                          I have permission to import and process this
-                          transcript.
-                        </label>
+                    <nav className="session-tabs" aria-label="Session views">
+                      {["transcript", "notes", "study", "personal"].map((t) => (
                         <button
-                          disabled={busy || !permission || !imported.trim()}
-                          onClick={() =>
-                            void action({
-                              action: "import",
-                              text: imported,
-                              format,
-                              confirmed: permission,
-                            }).then((result) => {
-                              if (result) setImported("");
-                            })
-                          }
+                          key={t}
+                          aria-pressed={tab === t}
+                          onClick={() => setTab(t)}
                         >
-                          Import transcript
-                        </button>
-                      </details>
-                    )}
-                  </section>
-                )}
-                {tab === "notes" && (
-                  <section className="session-notes">
-                    <div className="session-actions">
-                      {host && snapshot.capabilities.ai && (
-                        <button
-                          className="session-primary"
-                          disabled={busy || !snapshot.segments.length}
-                          onClick={() =>
-                            void action({
-                              action: "process",
-                              kind: "notes",
-                              request_id: crypto.randomUUID(),
-                            })
+                          {
+                            {
+                              transcript: "Transcript",
+                              notes: "Notes",
+                              study: "Revision",
+                              personal: "Personal notes",
+                            }[t]
                           }
-                        >
-                          Generate reviewed draft
                         </button>
-                      )}
-                      {snapshot.note &&
-                        (["write", "docx", "pdf", "md", "txt"] as const).map(
-                          (format) => (
+                      ))}
+                    </nav>
+                    {tab === "transcript" && (
+                      <section>
+                        <label className="tools-search">
+                          <Search size={18} />
+                          <input
+                            aria-label="Search transcript"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            placeholder="Search what was said…"
+                          />
+                        </label>
+                        <div className="session-actions">
+                          {(["txt", "srt", "vtt"] as const).map((format) => (
                             <button
-                              disabled={busy}
                               key={format}
-                              onClick={() => void exportNotes(format)}
+                              onClick={() =>
+                                download(
+                                  format === "txt"
+                                    ? transcriptText(snapshot.segments)
+                                    : transcriptCaptions(
+                                        snapshot.segments,
+                                        format,
+                                      ),
+                                  `${snapshot.room.title}.${format}`,
+                                  "text/plain;charset=utf-8",
+                                )
+                              }
                             >
-                              <FileText size={15} />
-                              {format === "write"
-                                ? "Save copy in Write"
-                                : format.toUpperCase()}
+                              <Download size={15} />
+                              {format.toUpperCase()}
                             </button>
-                          ),
-                        )}
-                    </div>
-                    {snapshot.note ? (
-                      <>
-                        <p className="session-notice">
-                          {snapshot.note.ai_generated
-                            ? "AI-generated draft. Verify claims against the transcript."
-                            : "Manually prepared or fictional example notes."}{" "}
-                          ·{" "}
-                          {snapshot.note.published
-                            ? "Published to the authorized audience"
-                            : "Private draft — host only"}
-                        </p>
-                        <h2>Overview</h2>
-                        {snapshot.note.body.overview.map((n, i) => (
-                          <p key={i}>
-                            {n.text}
-                            {refs(n.segment_ids)}
+                          ))}
+                        </div>
+                        <div className="session-transcript">
+                          {snapshot.segments
+                            .filter((s) =>
+                              `${s.speaker_name} ${segmentText(s)}`
+                                .toLowerCase()
+                                .includes(query.toLowerCase()),
+                            )
+                            .map((s) => (
+                              <article
+                                id={"segment-" + s.id}
+                                key={s.id}
+                                className={s.important ? "important" : ""}
+                              >
+                                <header>
+                                  <strong>{s.speaker_name}</strong>
+                                  <time>
+                                    {timestamp(s.start_ms)}–
+                                    {timestamp(s.end_ms)}
+                                  </time>
+                                  <small>
+                                    {s.language}
+                                    {s.edited_text !== null
+                                      ? " · edited (original preserved)"
+                                      : ""}
+                                  </small>
+                                </header>
+                                <p dir="auto">{segmentText(s)}</p>
+                                {host && (
+                                  <div>
+                                    <button
+                                      onClick={() => {
+                                        const value = prompt(
+                                          "Correct transcript (original is preserved)",
+                                          segmentText(s),
+                                        );
+                                        if (value !== null)
+                                          void action({
+                                            action: "edit_segment",
+                                            segment_id: s.id,
+                                            patch: { edited_text: value },
+                                          });
+                                      }}
+                                    >
+                                      Correct
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        void action({
+                                          action: "edit_segment",
+                                          segment_id: s.id,
+                                          patch: { important: !s.important },
+                                        })
+                                      }
+                                    >
+                                      {s.important
+                                        ? "Unmark"
+                                        : "Mark important"}
+                                    </button>
+                                  </div>
+                                )}
+                              </article>
+                            ))}
+                        </div>
+                        {!snapshot.segments.length && (
+                          <p className="session-notice">
+                            No shared transcript is available. The host controls
+                            publication and retention.
                           </p>
-                        ))}
-                        {snapshot.note.body.topics.map((t, i) => (
-                          <div key={i}>
-                            <h2>{t.title}</h2>
-                            {t.details.map((n, j) => (
-                              <p key={j}>
+                        )}
+                        {host && snapshot.capabilities.stt && (
+                          <details className="session-form">
+                            <summary>
+                              <Upload size={16} />
+                              Transcribe a permitted audio recording
+                            </summary>
+                            <p>
+                              Private upload, up to 20 MB. Qwen file
+                              transcription returns sentence timestamps. Speaker
+                              identities are unverified. Temporary audio is
+                              deleted after processing; this does not record the
+                              current meeting.
+                            </p>
+                            <label className="session-file-picker">
+                              <Upload size={16} />
+                              Audio file
+                              <input
+                                type="file"
+                                className="session-file-input"
+                                accept=".wav,.mp3,.mp4,.webm,.ogg"
+                                onChange={(e) =>
+                                  setAudioUpload(e.target.files?.[0] || null)
+                                }
+                              />
+                              <span>
+                                {audioUpload?.name ||
+                                  "Choose an audio recording"}
+                              </span>
+                            </label>
+                            <label>
+                              Recording language
+                              <select
+                                value={audioLanguage}
+                                onChange={(e) =>
+                                  setAudioLanguage(e.target.value)
+                                }
+                              >
+                                {(
+                                  snapshot.capabilities.speechLanguages || [
+                                    "en",
+                                  ]
+                                ).map((language) => (
+                                  <option key={language}>{language}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label>
+                              <input
+                                type="checkbox"
+                                checked={audioPermission}
+                                onChange={(e) =>
+                                  setAudioPermission(e.target.checked)
+                                }
+                              />
+                              I have permission from the recorded participants
+                              to upload this audio and process it with Qwen.
+                            </label>
+                            <button
+                              disabled={
+                                busy ||
+                                !audioPermission ||
+                                !audioUpload ||
+                                audioUpload.size > 20971520
+                              }
+                              onClick={() => void uploadAudio()}
+                            >
+                              {busy
+                                ? "Uploading / submitting…"
+                                : "Upload & transcribe"}
+                            </button>
+                            {snapshot.jobs
+                              .filter((j) => j.kind === "filetrans")
+                              .map((j) => (
+                                <p key={j.id} role="status">
+                                  Audio transcription: {j.state}
+                                  {j.error ? ` — ${j.error}` : ""}
+                                </p>
+                              ))}
+                          </details>
+                        )}
+                        {host && (
+                          <details className="session-form">
+                            <summary>
+                              <Upload size={16} />
+                              Import a permitted transcript
+                            </summary>
+                            <label>
+                              Format
+                              <select
+                                aria-label="Transcript format"
+                                value={format}
+                                onChange={(e) => setFormat(e.target.value)}
+                              >
+                                {["txt", "srt", "vtt"].map((f) => (
+                                  <option key={f}>{f}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label>
+                              Transcript text
+                              <textarea
+                                aria-label="Transcript import text"
+                                value={imported}
+                                onChange={(e) => setImported(e.target.value)}
+                                maxLength={1000000}
+                              />
+                            </label>
+                            <label className="session-file-picker">
+                              <Upload size={16} />
+                              Or open a file
+                              <input
+                                type="file"
+                                className="session-file-input"
+                                accept=".txt,.srt,.vtt"
+                                onChange={async (e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) {
+                                    setImported(await f.text());
+                                    setFormat(f.name.split(".").pop() || "txt");
+                                  }
+                                }}
+                              />
+                            </label>
+                            <p>
+                              Plain text has synthetic line timestamps. Imported
+                              speaker labels are unknown; they are not verified
+                              participant identities.
+                            </p>
+                            <label>
+                              <input
+                                type="checkbox"
+                                checked={permission}
+                                onChange={(e) =>
+                                  setPermission(e.target.checked)
+                                }
+                              />
+                              I have permission to import and process this
+                              transcript.
+                            </label>
+                            <button
+                              disabled={busy || !permission || !imported.trim()}
+                              onClick={() =>
+                                void action({
+                                  action: "import",
+                                  text: imported,
+                                  format,
+                                  confirmed: permission,
+                                }).then((result) => {
+                                  if (result) setImported("");
+                                })
+                              }
+                            >
+                              Import transcript
+                            </button>
+                          </details>
+                        )}
+                      </section>
+                    )}
+                    {tab === "notes" && (
+                      <section className="session-notes">
+                        <div className="session-actions">
+                          {host && snapshot.capabilities.ai && (
+                            <button
+                              className="session-primary"
+                              disabled={busy || !snapshot.segments.length}
+                              onClick={() =>
+                                void action({
+                                  action: "process",
+                                  kind: "notes",
+                                  request_id: crypto.randomUUID(),
+                                })
+                              }
+                            >
+                              Generate reviewed draft
+                            </button>
+                          )}
+                          {snapshot.note &&
+                            (
+                              ["write", "docx", "pdf", "md", "txt"] as const
+                            ).map((format) => (
+                              <button
+                                disabled={busy}
+                                key={format}
+                                onClick={() => void exportNotes(format)}
+                              >
+                                <FileText size={15} />
+                                {format === "write"
+                                  ? "Save copy in Write"
+                                  : format.toUpperCase()}
+                              </button>
+                            ))}
+                        </div>
+                        {snapshot.note ? (
+                          <>
+                            <p className="session-notice">
+                              {snapshot.note.ai_generated
+                                ? "AI-generated draft. Verify claims against the transcript."
+                                : "Manually prepared or fictional example notes."}{" "}
+                              ·{" "}
+                              {snapshot.note.published
+                                ? "Published to the authorized audience"
+                                : "Private draft — host only"}
+                            </p>
+                            <h2>Overview</h2>
+                            {snapshot.note.body.overview.map((n, i) => (
+                              <p key={i}>
                                 {n.text}
                                 {refs(n.segment_ids)}
                               </p>
                             ))}
-                          </div>
-                        ))}
-                        <h2>Decisions</h2>
-                        {snapshot.note.body.decisions.map((n, i) => (
-                          <p key={i}>
-                            {n.text}
-                            {refs(n.segment_ids)}
-                          </p>
-                        ))}
-                        <h2>Action items</h2>
-                        {snapshot.note.body.actions.map((a, i) => (
-                          <p key={i}>
-                            {a.text}
-                            <small>
-                              Owner: {a.owner || "unconfirmed"} · Deadline:{" "}
-                              {a.deadline || "not stated"}
-                              {a.needs_confirmation
-                                ? " · Confirm responsibility"
-                                : ""}
-                            </small>
-                            {refs(a.segment_ids)}
-                          </p>
-                        ))}
-                        <h2>Concepts</h2>
-                        {snapshot.note.body.concepts.map((c, i) => (
-                          <p key={i}>
-                            <strong>{c.name}</strong> — {c.explanation}
-                            {refs(c.segment_ids)}
-                          </p>
-                        ))}
-                        {host && (
-                          <details className="session-form">
-                            <summary>Review, edit & publish</summary>
-                            <p>
-                              Review claims and their source passages before
-                              publishing.
-                            </p>
-                            <NotesReview
-                              draft={noteDraft}
-                              onChange={setNoteDraft}
-                              segments={snapshot.segments}
-                            />
-                            <button
-                              disabled={busy}
-                              onClick={() => {
-                                try {
-                                  const body = notesSchema.parse(
-                                    JSON.parse(noteDraft),
-                                  );
-                                  void action({
-                                    action: "save_note",
-                                    body,
-                                    published: false,
-                                    ai_generated: snapshot.note?.ai_generated,
-                                  });
-                                } catch (e) {
-                                  setError(String(e));
-                                }
-                              }}
-                            >
-                              Save private draft
-                            </button>
-                            <button
-                              disabled={busy}
-                              onClick={() => {
-                                try {
-                                  const body = notesSchema.parse(
-                                    JSON.parse(noteDraft),
-                                  );
-                                  void action({
-                                    action: "save_note",
-                                    body,
-                                    published: true,
-                                    ai_generated: snapshot.note?.ai_generated,
-                                  });
-                                } catch (e) {
-                                  setError(String(e));
-                                }
-                              }}
-                            >
-                              Publish to authorized audience
-                            </button>
-                          </details>
-                        )}
-                      </>
-                    ) : (
-                      <div className="session-notice">
-                        <p>
-                          No published notes yet. AI generation requires a
-                          configured provider; you can also prepare your own
-                          structured notes.
-                        </p>
-                        {host && (
-                          <button
-                            disabled={busy}
-                            onClick={() =>
-                              void action({
-                                action: "save_note",
-                                body: {
-                                  overview: [],
-                                  topics: [],
-                                  decisions: [],
-                                  actions: [],
-                                  concepts: [],
-                                  questions: [],
-                                },
-                                published: false,
-                                ai_generated: false,
-                              })
-                            }
-                          >
-                            Create a manual draft
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </section>
-                )}
-                {tab === "study" && (
-                  <section>
-                    <h2>Personal revision</h2>
-                    <p>
-                      Practice material is not an official university
-                      assessment.
-                    </p>
-                    {snapshot.capabilities.ai && (
-                      <button
-                        disabled={busy || !snapshot.segments.length}
-                        onClick={() =>
-                          void action({
-                            action: "process",
-                            kind: "study",
-                            request_id: crypto.randomUUID(),
-                          })
-                        }
-                      >
-                        Generate flashcards & practice quiz
-                      </button>
-                    )}
-                    {snapshot.cards.map((card) => (
-                      <details key={card.id} className="session-card">
-                        <summary>{card.front}</summary>
-                        <p>{card.back}</p>
-                        {editingCard === card.id ? (
-                          <form
-                            className="session-form"
-                            onSubmit={(e) => {
-                              e.preventDefault();
-                              void action({
-                                action: "update_card",
-                                card_id: card.id,
-                                patch: { front: cardFront, back: cardBack },
-                              }).then((ok) => {
-                                if (ok) setEditingCard(null);
-                              });
-                            }}
-                          >
-                            <label>
-                              Question
-                              <input
-                                required
-                                maxLength={1000}
-                                value={cardFront}
-                                onChange={(e) => setCardFront(e.target.value)}
-                              />
-                            </label>
-                            <label>
-                              Answer
-                              <textarea
-                                required
-                                maxLength={5000}
-                                value={cardBack}
-                                onChange={(e) => setCardBack(e.target.value)}
-                              />
-                            </label>
-                            <button disabled={busy}>Save card</button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingCard(null)}
-                            >
-                              Cancel
-                            </button>
-                          </form>
+                            {snapshot.note.body.topics.map((t, i) => (
+                              <div key={i}>
+                                <h2>{t.title}</h2>
+                                {t.details.map((n, j) => (
+                                  <p key={j}>
+                                    {n.text}
+                                    {refs(n.segment_ids)}
+                                  </p>
+                                ))}
+                              </div>
+                            ))}
+                            <h2>Decisions</h2>
+                            {snapshot.note.body.decisions.map((n, i) => (
+                              <p key={i}>
+                                {n.text}
+                                {refs(n.segment_ids)}
+                              </p>
+                            ))}
+                            <h2>Action items</h2>
+                            {snapshot.note.body.actions.map((a, i) => (
+                              <p key={i}>
+                                {a.text}
+                                <small>
+                                  Owner: {a.owner || "unconfirmed"} · Deadline:{" "}
+                                  {a.deadline || "not stated"}
+                                  {a.needs_confirmation
+                                    ? " · Confirm responsibility"
+                                    : ""}
+                                </small>
+                                {refs(a.segment_ids)}
+                              </p>
+                            ))}
+                            <h2>Concepts</h2>
+                            {snapshot.note.body.concepts.map((c, i) => (
+                              <p key={i}>
+                                <strong>{c.name}</strong> — {c.explanation}
+                                {refs(c.segment_ids)}
+                              </p>
+                            ))}
+                            {host && (
+                              <details className="session-form">
+                                <summary>Review, edit & publish</summary>
+                                <p>
+                                  Review claims and their source passages before
+                                  publishing.
+                                </p>
+                                <NotesReview
+                                  draft={noteDraft}
+                                  onChange={setNoteDraft}
+                                  segments={snapshot.segments}
+                                />
+                                <button
+                                  disabled={busy}
+                                  onClick={() => {
+                                    try {
+                                      const body = notesSchema.parse(
+                                        JSON.parse(noteDraft),
+                                      );
+                                      void action({
+                                        action: "save_note",
+                                        body,
+                                        published: false,
+                                        ai_generated:
+                                          snapshot.note?.ai_generated,
+                                      });
+                                    } catch (e) {
+                                      setError(String(e));
+                                    }
+                                  }}
+                                >
+                                  Save private draft
+                                </button>
+                                <button
+                                  disabled={busy}
+                                  onClick={() => {
+                                    try {
+                                      const body = notesSchema.parse(
+                                        JSON.parse(noteDraft),
+                                      );
+                                      void action({
+                                        action: "save_note",
+                                        body,
+                                        published: true,
+                                        ai_generated:
+                                          snapshot.note?.ai_generated,
+                                      });
+                                    } catch (e) {
+                                      setError(String(e));
+                                    }
+                                  }}
+                                >
+                                  Publish to authorized audience
+                                </button>
+                              </details>
+                            )}
+                          </>
                         ) : (
-                          <button
-                            onClick={() => {
-                              setEditingCard(card.id);
-                              setCardFront(card.front);
-                              setCardBack(card.back);
-                            }}
-                          >
-                            Edit card
-                          </button>
-                        )}
-                        {refs(card.segment_ids)}
-                        <small>
-                          Due {new Date(card.due_at).toLocaleDateString()}
-                        </small>
-                        <div className="session-actions">
-                          {["Again", "Difficult", "Good", "Confident"].map(
-                            (label, confidence) => (
+                          <div className="session-notice">
+                            <p>
+                              No published notes yet. AI generation requires a
+                              configured provider; you can also prepare your own
+                              structured notes.
+                            </p>
+                            {host && (
                               <button
-                                key={label}
+                                disabled={busy}
                                 onClick={() =>
                                   void action({
-                                    action: "review_card",
-                                    card_id: card.id,
-                                    confidence,
+                                    action: "save_note",
+                                    body: {
+                                      overview: [],
+                                      topics: [],
+                                      decisions: [],
+                                      actions: [],
+                                      concepts: [],
+                                      questions: [],
+                                    },
+                                    published: false,
+                                    ai_generated: false,
                                   })
                                 }
                               >
-                                {label}
+                                Create a manual draft
                               </button>
-                            ),
-                          )}
+                            )}
+                          </div>
+                        )}
+                      </section>
+                    )}
+                    {tab === "study" && (
+                      <section>
+                        <h2>Personal revision</h2>
+                        <p>
+                          Practice material is not an official university
+                          assessment.
+                        </p>
+                        {snapshot.capabilities.ai && (
                           <button
+                            disabled={busy || !snapshot.segments.length}
                             onClick={() =>
                               void action({
-                                action: "delete_card",
-                                card_id: card.id,
+                                action: "process",
+                                kind: "study",
+                                request_id: crypto.randomUUID(),
                               })
                             }
                           >
-                            Delete card
+                            Generate flashcards & practice quiz
                           </button>
-                        </div>
-                      </details>
-                    ))}
-                  </section>
-                )}
-                {tab === "personal" && (
-                  <section className="session-form">
-                    <h2>Your private annotations</h2>
-                    <label>
-                      Folder / subject
-                      <input
-                        value={folder}
-                        onChange={(e) => setFolder(e.target.value)}
-                        maxLength={120}
-                      />
-                    </label>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={bookmarked}
-                        onChange={(e) => setBookmarked(e.target.checked)}
-                      />
-                      Bookmark this session
-                    </label>
-                    <label>
-                      Personal notes
-                      <textarea
-                        value={personal}
-                        onChange={(e) => setPersonal(e.target.value)}
-                        maxLength={12000}
-                      />
-                    </label>
-                    <button
-                      disabled={busy}
-                      onClick={() =>
-                        void action({
-                          action: "annotate",
-                          data: { body: personal, folder, bookmarked },
-                        })
-                      }
-                    >
-                      Save personal notes
-                    </button>
-                  </section>
-                )}
-                {snapshot.capabilities.ai && (
-                  <section className="session-form">
-                    <h2>Ask Syrka AI</h2>
-                    <label>
-                      Question or topic
-                      <input
-                        aria-label="Ask about this transcript"
-                        value={question}
-                        onChange={(e) => setQuestion(e.target.value)}
-                        maxLength={2500}
-                      />
-                    </label>
-                    <div className="session-actions">
-                      {[
-                        ["ask", "Ask"],
-                        ["explain", "Quick Explain"],
-                        ["teach", "Teach Me"],
-                        ["followup", "Draft follow-up"],
-                        ["translate", "Translate passages"],
-                      ].map(([kind, label]) => (
+                        )}
+                        {snapshot.cards.map((card) => (
+                          <details key={card.id} className="session-card">
+                            <summary>{card.front}</summary>
+                            <p>{card.back}</p>
+                            {editingCard === card.id ? (
+                              <form
+                                className="session-form"
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  void action({
+                                    action: "update_card",
+                                    card_id: card.id,
+                                    patch: { front: cardFront, back: cardBack },
+                                  }).then((ok) => {
+                                    if (ok) setEditingCard(null);
+                                  });
+                                }}
+                              >
+                                <label>
+                                  Question
+                                  <input
+                                    required
+                                    maxLength={1000}
+                                    value={cardFront}
+                                    onChange={(e) =>
+                                      setCardFront(e.target.value)
+                                    }
+                                  />
+                                </label>
+                                <label>
+                                  Answer
+                                  <textarea
+                                    required
+                                    maxLength={5000}
+                                    value={cardBack}
+                                    onChange={(e) =>
+                                      setCardBack(e.target.value)
+                                    }
+                                  />
+                                </label>
+                                <button disabled={busy}>Save card</button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingCard(null)}
+                                >
+                                  Cancel
+                                </button>
+                              </form>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setEditingCard(card.id);
+                                  setCardFront(card.front);
+                                  setCardBack(card.back);
+                                }}
+                              >
+                                Edit card
+                              </button>
+                            )}
+                            {refs(card.segment_ids)}
+                            <small>
+                              Due {new Date(card.due_at).toLocaleDateString()}
+                            </small>
+                            <div className="session-actions">
+                              {["Again", "Difficult", "Good", "Confident"].map(
+                                (label, confidence) => (
+                                  <button
+                                    key={label}
+                                    onClick={() =>
+                                      void action({
+                                        action: "review_card",
+                                        card_id: card.id,
+                                        confidence,
+                                      })
+                                    }
+                                  >
+                                    {label}
+                                  </button>
+                                ),
+                              )}
+                              <button
+                                onClick={() =>
+                                  void action({
+                                    action: "delete_card",
+                                    card_id: card.id,
+                                  })
+                                }
+                              >
+                                Delete card
+                              </button>
+                            </div>
+                          </details>
+                        ))}
+                      </section>
+                    )}
+                    {tab === "personal" && (
+                      <section className="session-form">
+                        <h2>Your private annotations</h2>
+                        <label>
+                          Folder / subject
+                          <input
+                            value={folder}
+                            onChange={(e) => setFolder(e.target.value)}
+                            maxLength={120}
+                          />
+                        </label>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={bookmarked}
+                            onChange={(e) => setBookmarked(e.target.checked)}
+                          />
+                          Bookmark this session
+                        </label>
+                        <label>
+                          Personal notes
+                          <textarea
+                            value={personal}
+                            onChange={(e) => setPersonal(e.target.value)}
+                            maxLength={12000}
+                          />
+                        </label>
                         <button
-                          key={kind}
-                          disabled={
-                            busy ||
-                            !question.trim() ||
-                            !snapshot.segments.length
-                          }
+                          disabled={busy}
                           onClick={() =>
                             void action({
-                              action: "process",
-                              kind,
-                              question,
-                              request_id: crypto.randomUUID(),
+                              action: "annotate",
+                              data: { body: personal, folder, bookmarked },
                             })
                           }
                         >
-                          {label}
+                          Save personal notes
                         </button>
-                      ))}
-                    </div>
-                    <p>
-                      Keyword retrieval uses only authorized transcript
-                      passages. Added educational explanations are distinguished
-                      from the speaker’s words. Translation output is separate
-                      from the original.
-                    </p>
-                  </section>
-                )}
-                <section className="session-jobs" aria-label="Processing jobs">
-                  {snapshot.jobs
-                    .filter((j) => j.kind !== "stt")
-                    .map((job: Job) => (
-                      <article key={job.id}>
-                        <strong>
-                          {job.kind} · {job.state}
-                        </strong>
-                        {job.error && <p role="alert">{job.error}</p>}
-                        {job.state === "running" &&
-                          clock - Date.parse(job.created_at) > 300000 && (
-                            <p>
-                              Processing may have been interrupted. The original
-                              transcript is unchanged; request a new job to
-                              retry.
-                            </p>
-                          )}
-                        {job.state === "done" && job.kind !== "notes" && (
-                          <>
-                            {typeof (job.output as { answer?: string })
-                              ?.answer === "string" ? (
-                              <p dir="auto">
-                                {(job.output as { answer: string }).answer}
-                                {(
-                                  job.output as {
-                                    external_explanation?: boolean;
-                                  }
-                                ).external_explanation && (
-                                  <small>
-                                    Contains educational explanation beyond the
-                                    transcript.
-                                  </small>
-                                )}
-                                {refs(
-                                  (job.output as { segment_ids: string[] })
-                                    .segment_ids || [],
-                                )}
-                              </p>
-                            ) : job.kind === "study" ? (
-                              (() => {
-                                const result = studySchema.safeParse(
-                                  job.output,
-                                );
-                                return result.success ? (
-                                  <div>
-                                    {result.data.flashcards.map((card, i) => (
-                                      <div key={i}>
-                                        <strong>{card.front}</strong>
-                                        <p>{card.back}</p>
-                                        {refs(card.segment_ids)}
-                                        <button
-                                          onClick={() =>
-                                            void action({
-                                              action: "card",
-                                              data: card,
-                                            })
-                                          }
-                                        >
-                                          Save flashcard
-                                        </button>
-                                      </div>
-                                    ))}
-                                    {result.data.questions.map((q, i) => (
-                                      <details key={i}>
-                                        <summary>{q.prompt}</summary>
-                                        {q.options.map((option) => (
-                                          <p key={option}>{option}</p>
+                      </section>
+                    )}
+                    {snapshot.capabilities.ai && (
+                      <section className="session-form">
+                        <h2>Ask Syrka AI</h2>
+                        <label>
+                          Question or topic
+                          <input
+                            aria-label="Ask about this transcript"
+                            value={question}
+                            onChange={(e) => setQuestion(e.target.value)}
+                            maxLength={2500}
+                          />
+                        </label>
+                        <div className="session-actions">
+                          {[
+                            ["ask", "Ask"],
+                            ["explain", "Quick Explain"],
+                            ["teach", "Teach Me"],
+                            ["followup", "Draft follow-up"],
+                            ["translate", "Translate passages"],
+                          ].map(([kind, label]) => (
+                            <button
+                              key={kind}
+                              disabled={
+                                busy ||
+                                !question.trim() ||
+                                !snapshot.segments.length
+                              }
+                              onClick={() =>
+                                void action({
+                                  action: "process",
+                                  kind,
+                                  question,
+                                  request_id: crypto.randomUUID(),
+                                })
+                              }
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        <p>
+                          Keyword retrieval uses only authorized transcript
+                          passages. Added educational explanations are
+                          distinguished from the speaker’s words. Translation
+                          output is separate from the original.
+                        </p>
+                      </section>
+                    )}
+                    <section
+                      className="session-jobs"
+                      aria-label="Processing jobs"
+                    >
+                      {snapshot.jobs
+                        .filter((j) => j.kind !== "stt")
+                        .map((job: Job) => (
+                          <article key={job.id}>
+                            <strong>
+                              {job.kind} · {job.state}
+                            </strong>
+                            {job.error && <p role="alert">{job.error}</p>}
+                            {job.state === "running" &&
+                              clock - Date.parse(job.created_at) > 300000 && (
+                                <p>
+                                  Processing may have been interrupted. The
+                                  original transcript is unchanged; request a
+                                  new job to retry.
+                                </p>
+                              )}
+                            {job.state === "done" && job.kind !== "notes" && (
+                              <>
+                                {typeof (job.output as { answer?: string })
+                                  ?.answer === "string" ? (
+                                  <p dir="auto">
+                                    {(job.output as { answer: string }).answer}
+                                    {(
+                                      job.output as {
+                                        external_explanation?: boolean;
+                                      }
+                                    ).external_explanation && (
+                                      <small>
+                                        Contains educational explanation beyond
+                                        the transcript.
+                                      </small>
+                                    )}
+                                    {refs(
+                                      (job.output as { segment_ids: string[] })
+                                        .segment_ids || [],
+                                    )}
+                                  </p>
+                                ) : job.kind === "study" ? (
+                                  (() => {
+                                    const result = studySchema.safeParse(
+                                      job.output,
+                                    );
+                                    return result.success ? (
+                                      <div>
+                                        {result.data.flashcards.map(
+                                          (card, i) => (
+                                            <div key={i}>
+                                              <strong>{card.front}</strong>
+                                              <p>{card.back}</p>
+                                              {refs(card.segment_ids)}
+                                              <button
+                                                onClick={() =>
+                                                  void action({
+                                                    action: "card",
+                                                    data: card,
+                                                  })
+                                                }
+                                              >
+                                                Save flashcard
+                                              </button>
+                                            </div>
+                                          ),
+                                        )}
+                                        {result.data.questions.map((q, i) => (
+                                          <details key={i}>
+                                            <summary>{q.prompt}</summary>
+                                            {q.options.map((option) => (
+                                              <p key={option}>{option}</p>
+                                            ))}
+                                            <p>{q.answer}</p>
+                                            <p>{q.explanation}</p>
+                                            {refs(q.segment_ids)}
+                                          </details>
                                         ))}
-                                        <p>{q.answer}</p>
-                                        <p>{q.explanation}</p>
-                                        {refs(q.segment_ids)}
-                                      </details>
-                                    ))}
-                                  </div>
-                                ) : null;
-                              })()
-                            ) : null}
-                          </>
-                        )}
-                      </article>
-                    ))}
-                </section>
-                </>}
+                                      </div>
+                                    ) : null;
+                                  })()
+                                ) : null}
+                              </>
+                            )}
+                          </article>
+                        ))}
+                    </section>
+                  </>
+                )}
               </div>
             </details>
           </div>

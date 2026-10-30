@@ -51,6 +51,8 @@ export type Member = {
   consent: boolean;
   can_publish: boolean;
   is_guest?: boolean;
+  guest_identity?: boolean;
+  expires_at?: string;
 };
 export type Segment = {
   id: string;

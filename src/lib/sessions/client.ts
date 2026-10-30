@@ -9,6 +9,8 @@ import {
   type GeneratedNotes,
 } from "./model";
 import { parseTranscript } from "./transcripts";
+export const scopedGuestEndpoint = "/workspace/api/sessions/guest";
+export const guestRoomKey = (id: string) => `syrka-guest-room:${id}`;
 export function endpoint(source: SessionSource) {
   return source === "campus" ? "/cam/api/sessions" : "/workspace/api/sessions";
 }
@@ -29,16 +31,38 @@ export async function sessionsApi(
   id?: string,
   after?: string,
 ) {
-  const roomId = id || (typeof payload?.roomId === "string" ? payload.roomId : undefined);
-  if (source === "workspace" && isDemoMode() && (!roomId || demoStore().snapshots[roomId]))
+  const roomId =
+    id || (typeof payload?.roomId === "string" ? payload.roomId : undefined);
+  if (
+    source === "workspace" &&
+    isDemoMode() &&
+    (!roomId || demoStore().snapshots[roomId])
+  )
     return demoRequest(payload, id);
   const headers = await sessionHeaders(source);
-  if (source === "workspace" && roomId && headers.Authorization && isDemoMode()) setDemoMode(false);
+  if (source === "workspace" && roomId && headers.Authorization && isDemoMode())
+    setDemoMode(false);
   const query = new URLSearchParams();
   if (id) query.set("id", id);
   if (after) query.set("after", after);
+  if (
+    source === "workspace" &&
+    roomId &&
+    headers.Authorization &&
+    sessionStorage.getItem(guestRoomKey(roomId)) === "true"
+  ) {
+    const current = (await supabase?.auth.getSession())?.data.session;
+    if (current && !current.user.is_anonymous)
+      sessionStorage.removeItem(guestRoomKey(roomId));
+  }
+  const useGuest =
+    source === "workspace" &&
+    !!roomId &&
+    (!headers.Authorization ||
+      sessionStorage.getItem(guestRoomKey(roomId)) === "true");
   const response = await fetch(
-    endpoint(source) + (query.size ? "?" + query : ""),
+    (useGuest ? scopedGuestEndpoint : endpoint(source)) +
+      (query.size ? "?" + query : ""),
     {
       method: payload ? "POST" : "GET",
       headers: {
