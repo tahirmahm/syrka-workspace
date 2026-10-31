@@ -150,9 +150,11 @@ export default function LiveComments({
           {comments.length} new
         </button>
       )}
-      {!hidden && !compact && !obstructed && !keyboard && (
+      {!hidden && !compact && !obstructed && (
         <div
           className="call-live-comments"
+          data-keyboard={!!keyboard}
+          style={keyboard ? { bottom: keyboard + 74 } : undefined}
           role="region"
           aria-label="Live comments"
         >
@@ -161,7 +163,7 @@ export default function LiveComments({
               ? `${comments.at(-1)!.name}: ${comments.at(-1)!.text}`
               : ""}
           </div>
-          {comments.map((c) => (
+          {(keyboard ? comments.slice(-1) : comments).map((c) => (
             <button
               key={c.id}
               className="call-live-comment"

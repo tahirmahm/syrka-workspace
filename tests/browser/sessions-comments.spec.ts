@@ -78,9 +78,12 @@ test("live comments expire without deleting history, cap flooding, respect overl
     });
     window.visualViewport!.dispatchEvent(new Event("resize"));
   });
-  await expect(page.getByRole("region", { name: "Live comments" })).toHaveCount(
-    0,
+  await expect(page.getByRole("region", { name: "Live comments" })).toHaveCSS(
+    "bottom",
+    "418px",
   );
+  await expect(page.locator(".call-live-comment")).toHaveCount(1);
+  await expect(page.locator(".call-live-comment")).toContainText("Typed reply");
   await expect(
     page.getByRole("form", { name: "Send a call comment" }),
   ).toHaveCSS("bottom", "356px");
