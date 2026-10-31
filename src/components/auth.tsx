@@ -6,13 +6,17 @@ import { Button } from "./ui/button";
 import { suiteName } from "@/lib/model";
 import { supabase, cloudConfigError } from "@/lib/storage";
 import { authErrorMessage } from "@/lib/cloud-config";
-import {workspacePath} from "@/lib/paths";
+import { workspacePath } from "@/lib/paths";
 export function Auth({
   onDemo,
   initialMessage = "",
+  allowDemo = true,
+  onAuthenticated,
 }: {
   onDemo: () => Promise<void>;
   initialMessage?: string;
+  allowDemo?: boolean;
+  onAuthenticated?: () => void;
 }) {
   const [signup, setSignup] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -64,7 +68,10 @@ export function Auth({
         setMessage(
           "Your registration request was accepted. Check your inbox and spam folder for a confirmation link, then return here to sign in. Email delivery has not been independently verified. If you already have an account, sign in instead.",
         );
-      else setMessage("Signed in. Opening your workspace…");
+      else {
+        setMessage("Signed in. Opening your workspace…");
+        onAuthenticated?.();
+      }
     } catch (error) {
       setFailed(true);
       setMessage(authErrorMessage(error));
@@ -92,24 +99,26 @@ export function Auth({
           Welcome to Syrka Workspace. Write your documents, organize numbers in
           Tables, and tell your story with Present.
         </p>
-        <Button
-          type="button"
-          className="demo-sign-in"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            try {
-              await onDemo();
-            } catch (error) {
-              setFailed(true);
-              setMessage(authErrorMessage(error));
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          Try demo — no account needed
-        </Button>
+        {allowDemo && (
+          <Button
+            type="button"
+            className="demo-sign-in"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onDemo();
+              } catch (error) {
+                setFailed(true);
+                setMessage(authErrorMessage(error));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Try demo — no account needed
+          </Button>
+        )}
         <Link className="auth-tools-link" href="/tools">
           Explore free Tools — no account needed
         </Link>

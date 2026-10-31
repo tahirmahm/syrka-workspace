@@ -1,0 +1,7 @@
+{
+  "status": "BLOCKED_GUEST_AUTH",
+  "providerCode": "anonymous_provider_disabled",
+  "providerStatus": 422,
+  "checked_at": "2026-10-30T18:13:25.323Z",
+  "media_verified": false
+}

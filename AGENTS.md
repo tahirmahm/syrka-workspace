@@ -10,3 +10,4 @@
 - Never silently enter demo mode due to invalid cloud configuration. Demo is an explicit user choice and local-only.
 - All infrastructure must remain free-tier. No paid features, upgrades or SMTP services without explicit approval.
 - Public Tools process files locally; no server uploads or file-content persistence.
+- Share `https://syrka-workspace-preview.vercel.app/workspace/sessions` for Sessions manual QA. After a new `feature/sessions-notes` Git Preview is READY, reassign this existing free alias to that committed deployment and verify its runtime SHA. Keep production domains/DNS unchanged; do not use an independent deployment.

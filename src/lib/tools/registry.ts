@@ -50,3 +50,13 @@ export const tools = [
 ] as const;
 export type ToolSlug = (typeof tools)[number]["slug"];
 export const toolsColor = "#8b78a0";
+
+export const knowledgeTools = [
+  {
+    slug: "notes",
+    name: "Notes",
+    category: "Meetings",
+    description:
+      "Search transcripts, review summaries and organize meeting and lecture knowledge.",
+  },
+] as const;

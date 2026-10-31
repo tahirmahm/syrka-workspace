@@ -1,0 +1,199 @@
+import WebSocket from "ws";
+import { randomUUID } from "node:crypto";
+import { qwenConfiguration, qwenSpeechReady, QwenRequestError } from "./qwen";
+
+/** Bounded outbound connection per PCM batch; Vercel never hosts a WebSocket server. */
+export async function transcribeRealtimePcm(blob: Blob, language: string) {
+  if (!qwenSpeechReady())
+    throw Error(
+      "Qwen live speech is not configured with protected free quota.",
+    );
+  if (
+    blob.type !== "audio/pcm" ||
+    blob.size < 3200 ||
+    blob.size > 640000 ||
+    blob.size % 2
+  )
+    throw Error("Live audio must be mono 16 kHz signed PCM16, 0.1–20 seconds.");
+  if (!["en", "hi", "ar", "fr", "de", "zh", "es"].includes(language))
+    throw Error("This language is not documented for Qwen live ASR.");
+  const config = qwenConfiguration();
+  const url = new URL(config.baseURL);
+  url.protocol = "wss:";
+  url.pathname = "/api-ws/v1/realtime";
+  url.search = "?model=qwen3-asr-flash-realtime";
+  const pcm = Buffer.from(await blob.arrayBuffer());
+  return new Promise<{
+    text: string;
+    language: string;
+    diagnostics: {
+      model: string;
+      transport: string;
+      events: Record<string, number>;
+      signal: boolean;
+    };
+  }>((resolve, reject) => {
+    let final = "",
+      settled = false,
+      phase = "connecting to the speech service";
+    const events: Record<string, number> = {};
+    let providerStatus: number | undefined;
+    const signal = pcm.some((byte) => byte !== 0);
+    const ws = new WebSocket(url, {
+      headers: { Authorization: `Bearer ${config.key}` },
+      handshakeTimeout: 10000,
+      maxPayload: 1000000,
+      perMessageDeflate: false,
+    });
+    const timer = setTimeout(
+      () =>
+        finish(
+          new Error(
+            `Qwen live speech timed out while ${phase}. This audio batch was not saved; existing transcripts are intact.`,
+          ),
+        ),
+      35000,
+    );
+    function finish(error?: Error) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      ws.terminate();
+      // Metadata only. Never log transcripts, audio, URLs with credentials, headers or provider bodies.
+      console.info("[syrka-asr]", {
+        model: "qwen3-asr-flash-realtime",
+        transport: "outbound-websocket",
+        phase,
+        events,
+        audio_bytes: pcm.length,
+        nonzero_audio: signal,
+        result: error ? "error" : "done",
+        characters: final.length,
+        provider_status: providerStatus,
+        quota: error instanceof QwenRequestError ? error.quota : false,
+      });
+      if (error) reject(error);
+      else
+        resolve({
+          text: final,
+          language,
+          diagnostics: {
+            model: "qwen3-asr-flash-realtime",
+            transport: "outbound-websocket",
+            events,
+            signal,
+          },
+        });
+    }
+    const send = (value: Record<string, unknown>) =>
+      ws.send(JSON.stringify({ event_id: randomUUID(), ...value }));
+    ws.on("open", () => {
+      phase = "waiting for speech session creation";
+    });
+    const configureSession = () => {
+      send({
+        type: "session.update",
+        session: {
+          input_audio_format: "pcm",
+          sample_rate: 16000,
+          input_audio_transcription: { language },
+          turn_detection: null,
+        },
+      });
+    };
+    ws.on("unexpected-response", (_, response) => {
+      providerStatus = response.statusCode;
+      phase = `checking an HTTP ${response.statusCode || 502} handshake response`;
+      let body = "";
+      response.on("data", (chunk) => {
+        if (body.length < 8000) body += chunk;
+      });
+      response.on("end", () =>
+        finish(
+          new QwenRequestError(
+            response.statusCode || 502,
+            /FreeTierOnly|AllocationQuota|quota/i.test(body),
+          ),
+        ),
+      );
+    });
+    ws.on("error", () =>
+      finish(
+        new Error(
+          "Qwen live speech connection failed. No paid fallback was attempted.",
+        ),
+      ),
+    );
+    ws.on("close", () => {
+      if (!settled)
+        finish(
+          new Error("Qwen live speech disconnected before final recognition."),
+        );
+    });
+    ws.on("message", (bytes) => {
+      try {
+        const event = JSON.parse(bytes.toString());
+        const known = [
+          "session.created",
+          "session.updated",
+          "input_audio_buffer.committed",
+          "conversation.item.input_audio_transcription.completed",
+          "conversation.item.input_audio_transcription.failed",
+          "session.finished",
+          "error",
+        ];
+        const category = known.includes(event.type) ? event.type : "other";
+        events[category] = (events[category] || 0) + 1;
+        if (event.type === "session.created") {
+          phase = "waiting for session configuration after session creation";
+          configureSession();
+        } else if (event.type === "session.updated") {
+          phase = "waiting for audio commit acknowledgment";
+          for (let offset = 0; offset < pcm.length; offset += 3200)
+            send({
+              type: "input_audio_buffer.append",
+              audio: pcm.subarray(offset, offset + 3200).toString("base64"),
+            });
+          send({ type: "input_audio_buffer.commit" });
+        } else if (event.type === "input_audio_buffer.committed") {
+          phase = "waiting for final speech recognition";
+          send({ type: "session.finish" });
+        } else if (
+          event.type === "conversation.item.input_audio_transcription.completed"
+        ) {
+          if (
+            typeof event.transcript !== "string" ||
+            event.transcript.length > 16000
+          )
+            throw Error("Invalid live transcription response.");
+          phase = "waiting for session completion";
+          final += event.transcript;
+        } else if (event.type === "session.finished") finish();
+        else if (
+          event.type === "error" ||
+          event.type === "conversation.item.input_audio_transcription.failed"
+        )
+          finish(
+            new QwenRequestError(
+              400,
+              /FreeTierOnly|AllocationQuota|quota/i.test(
+                event.error?.code || "",
+              ),
+            ),
+          );
+      } catch (error) {
+        const kind =
+          error instanceof Error
+            ? error.message === "Invalid live transcription response."
+              ? "CompletionShapeError"
+              : error.name
+            : "UnknownError";
+        finish(
+          new Error(
+            `Qwen returned an invalid live speech response (${kind}; ${phase}).`,
+          ),
+        );
+      }
+    });
+  });
+}

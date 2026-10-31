@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "checks": [
+    "Current host can upload private audio",
+    "Current host can read original private audio",
+    "Other user cannot read private audio through direct Storage API",
+    "Private audio fixture deleted"
+  ],
+  "checked_at": "2026-10-30T05:16:36.594Z"
+}

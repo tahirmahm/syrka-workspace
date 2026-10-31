@@ -1,0 +1,256 @@
+{
+  "url": "https://syrka-workspace-jxofh8uia-tahirmahmood439wel-gmailcoms-projects.vercel.app",
+  "expectedSha": "438438438e7b6f71eaf6701f68abff9fb9cfa66f",
+  "checks": [
+    "Exact Preview SHA and LiveKit configuration",
+    "Invitation alone cannot mint a media token",
+    "Waiting-room status survives reload without exposing meeting content",
+    "Waiting participant cannot obtain a room token",
+    "Guest cannot invoke host controls",
+    "Host-disabled publication is enforced in signed participant grants",
+    "Authenticated actor 1 receives an isolated short-lived room grant without speech consent",
+    "Authenticated actor 2 receives an isolated short-lived room grant without speech consent",
+    "Browser actor 1 has its own approved application session",
+    "Actor 1 video stage fits its viewport",
+    "Browser actor 2 has its own approved application session",
+    "Actor 2 video stage fits its viewport",
+    "Copied invitation is the actual authorized meeting URL",
+    "Actor 1 can leave and close its peer connections",
+    "Actor 2 can leave and close its peer connections"
+  ],
+  "media_verified": false,
+  "physical_devices_manually_verified": false,
+  "clients": [
+    {
+      "network": {
+        "requestedSockets": 3,
+        "receivedFrames": 48,
+        "hosts": [
+          "syrka-sessions-2ja3fujk.livekit.cloud",
+          "syrka-sessions-2ja3fujk.ofrankfurt1b.production.livekit.cloud",
+          "syrka-sessions-2ja3fujk.omarseille1b.production.livekit.cloud"
+        ]
+      },
+      "transport": {
+        "observedCandidates": [],
+        "iceErrors": [
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          }
+        ],
+        "callState": "connecting",
+        "pcs": [
+          {
+            "connection": "closed",
+            "ice": "closed",
+            "gathering": "complete",
+            "icePolicy": "relay",
+            "iceServerSchemes": [
+              "turn",
+              "turns"
+            ],
+            "inbound": [],
+            "outbound": [],
+            "candidates": []
+          },
+          {
+            "connection": "closed",
+            "ice": "closed",
+            "gathering": "complete",
+            "icePolicy": "relay",
+            "iceServerSchemes": [
+              "turn",
+              "turns"
+            ],
+            "inbound": [],
+            "outbound": [],
+            "candidates": []
+          },
+          {
+            "connection": "new",
+            "ice": "new",
+            "gathering": "complete",
+            "icePolicy": "relay",
+            "iceServerSchemes": [
+              "turn",
+              "turns"
+            ],
+            "inbound": [],
+            "outbound": [],
+            "candidates": []
+          }
+        ],
+        "audioPlayback": [],
+        "renderedVideos": []
+      }
+    },
+    {
+      "network": {
+        "requestedSockets": 3,
+        "receivedFrames": 42,
+        "hosts": [
+          "syrka-sessions-2ja3fujk.livekit.cloud",
+          "syrka-sessions-2ja3fujk.ofrankfurt1b.production.livekit.cloud",
+          "syrka-sessions-2ja3fujk.omarseille1b.production.livekit.cloud"
+        ]
+      },
+      "transport": {
+        "observedCandidates": [],
+        "iceErrors": [
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          },
+          {
+            "code": 701,
+            "category": "ICE_SERVER_ERROR"
+          }
+        ],
+        "callState": "connecting",
+        "pcs": [
+          {
+            "connection": "closed",
+            "ice": "closed",
+            "gathering": "complete",
+            "icePolicy": "relay",
+            "iceServerSchemes": [
+              "turn",
+              "turns"
+            ],
+            "inbound": [],
+            "outbound": [],
+            "candidates": []
+          },
+          {
+            "connection": "closed",
+            "ice": "closed",
+            "gathering": "complete",
+            "icePolicy": "relay",
+            "iceServerSchemes": [
+              "turn",
+              "turns"
+            ],
+            "inbound": [],
+            "outbound": [],
+            "candidates": []
+          },
+          {
+            "connection": "new",
+            "ice": "new",
+            "gathering": "complete",
+            "icePolicy": "relay",
+            "iceServerSchemes": [
+              "turn",
+              "turns"
+            ],
+            "inbound": [],
+            "outbound": [],
+            "candidates": []
+          }
+        ],
+        "audioPlayback": [],
+        "renderedVideos": []
+      }
+    }
+  ],
+  "clientKinds": [
+    "account",
+    "account"
+  ],
+  "controls": "NOT_REACHED",
+  "network_error_feedback": [
+    true,
+    true
+  ],
+  "reconnection": "NOT_REACHED_MEDIA_CONNECTION_BLOCKED",
+  "screen_share": "NOT_REACHED_MEDIA_CONNECTION_BLOCKED",
+  "status": "BLOCKED_MEDIA_TRANSPORT",
+  "error": "Authenticated LiveKit signaling reached the service, but ICE/media did not establish in this runner. No bidirectional audio/video acceptance claim.",
+  "cleanup": "Own QA room and records removed",
+  "checked_at": "2026-10-30T18:18:35.064Z"
+}

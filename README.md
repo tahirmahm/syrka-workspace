@@ -123,3 +123,11 @@ The current provider accepted a QA registration and its email was found in the c
 ### Syrka Write 2
 
 See [architecture audit](WRITE-2-AUDIT.md) and [release capabilities and limitations](WRITE-2-RELEASE.md). This is a compatible progressive upgrade to the existing Tiptap editor, with no database migration. Print preview runs locally using Paged.js; bundled Noto fonts are licensed under SIL OFL 1.1. No external writing-analysis service is used.
+
+## Sessions and Notes (feature release)
+
+Sessions is a main Workspace application at `/workspace/sessions`, immediately before Tools in desktop and mobile navigation. Its meeting invitations use `/workspace/sessions/meeting/[id]`; previous `/workspace/tools/sessions` URLs redirect with identifiers and query parameters preserved. Sessions and Notes provide meeting records, permissioned transcripts, reviewed notes, exports and Campus class entry points. Media, AI and speech features require eligible server-side configuration and hosted acceptance tests; they are disabled when configuration is missing. This branch does not claim a verified live communications rollout. See [architecture, provider audit, setup, test gates and limitations](docs/sessions-notes.md). Existing eight local utilities remain local; Sessions and Notes are explicit account-based cloud services.
+
+Instant Sessions: **Start call** creates a hosted meeting and opens its real LiveKit connection flow. Account-free guests use short-lived meeting-scoped HttpOnly credentials and host admission; Supabase anonymous signup is not required. Apply the additive scoped-guest migration. See [implementation, local tests and remaining acceptance gates](docs/sessions-instant-guests.md). No verified physical-device or guest media rollout is claimed.
+
+Persistent Sessions calls: the active room lives beneath the root Workspace layout and minimizes during client-side navigation. See [calling surface, PiP/browser limits, permissions and acceptance checklist](docs/sessions-persistent-calls.md). Physical native PiP, background media and shared-screen audio require device acceptance before merging the draft.

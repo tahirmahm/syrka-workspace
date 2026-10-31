@@ -1,0 +1,39 @@
+{
+  "url": "https://syrka-workspace-ka1ydaybp-tahirmahmood439wel-gmailcoms-projects.vercel.app",
+  "expectedSha": "511d8ba3690437b8e244daebfe55008c4b7f85b1",
+  "checks": [
+    "Preview SHA matches the requested Git commit",
+    "User B cannot read user A private meeting",
+    "Authenticated transcript import persists",
+    "Manually authored Notes save and reopen without AI",
+    "User B cannot overwrite user A Notes",
+    "QA-only session cleanup succeeds",
+    "Preview has real AI, speech and development media capability",
+    "Real audio uploaded to private storage",
+    "Actual qwen3-asr-flash-filetrans response saved sentence timestamps",
+    "Uploaded speaker identities remain unverified",
+    "Real speech content recognized",
+    "Actual Qwen structured notes persisted",
+    "Saved real notes appear in the Workspace Notes interface",
+    "No live recognition before all participants consent"
+  ],
+  "media": "not verified by this API/audio acceptance harness",
+  "uploadedTranscriptHash": "b0bf92ba4a55b593a6bf6b397dff627410c2cfcdace49b819b4302047ff3d5fe",
+  "status": "FAILED_OR_BLOCKED",
+  "error": "Actual realtime ASR failed: Qwen live speech timed out. This audio batch was not saved; existing transcripts are intact.",
+  "uploaded_audio_to_saved_notes_verified": true,
+  "realtime_asr_verified": false,
+  "livekit_media_verified": false,
+  "generated_note_metrics": {
+    "ai_generated": true,
+    "published": false,
+    "overview_claims": 4,
+    "topics": 1,
+    "actions": 2,
+    "usage": {
+      "requests": 1,
+      "inputTokens": 510,
+      "outputTokens": 1081
+    }
+  }
+}
