@@ -30,6 +30,6 @@ export default function CopyToast({ request }: { request: number }) {
         </span>
       )}
     </div>,
-    document.body,
+    document.fullscreenElement || document.body,
   );
 }

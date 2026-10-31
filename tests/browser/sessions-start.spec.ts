@@ -776,6 +776,18 @@ test("copy invitation uses one compact one-second toast and clipboard errors rem
   await expect(toast).toHaveCount(1);
   await page.clock.fastForward(400);
   await expect(toast).toHaveCount(0);
+  await page.getByLabel("More call options", { exact: true }).click();
+  await page.getByRole("button", { name: "Full Screen", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => !!document.fullscreenElement))
+    .toBe(true);
+  await copy();
+  await expect(page.locator(":fullscreen .call-copy-toast")).toHaveText(
+    "Link copied",
+  );
+  await page.clock.fastForward(1000);
+  await expect(toast).toHaveCount(0);
+  await page.evaluate(() => document.exitFullscreen());
   await page.evaluate(() =>
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,

@@ -40,7 +40,7 @@ Sending is limited in the standard client to one message per 1.5 seconds and 2,0
 
 ## Copy confirmations and composer refinement
 
-Copy success uses a single portal-based, pointer-transparent “Link copied” pill below the top safe area. The visual toast fades and unmounts after exactly 1,000ms; repeated success restarts that one toast rather than stacking. A separate polite assistive status retains the announcement. Clipboard failures use the existing persistent, dismissible error alert. Other error lifetimes are unchanged.
+Copy success uses a single portal-based, pointer-transparent “Link copied” pill below the top safe area. The visual toast fades and unmounts after exactly 1,000ms; repeated success restarts that one toast rather than stacking. The portal targets the actual browser fullscreen element when present, with a body fallback for ordinary/unsupported fullscreen. A separate polite assistive status retains the announcement. Clipboard failures use the existing persistent, dismissible error alert. Other error lifetimes are unchanged.
 
 The default composer keeps Enter/Send available, preserves text while secondary panels open, and follows VisualViewport resize/scroll and window resize without changing the room connection. Incoming bubbles use local receipt lifetime rather than trusting sender clock synchronization. All message content remains React-escaped text; existing memory-only chat retention and approved-participant LiveKit data permissions are unchanged. Receive-side limits protect the overlay, while modified clients are still governed by existing LiveKit permission/removal controls rather than a new messaging server.
 
@@ -48,4 +48,4 @@ Focused regression coverage verifies 1,000ms toast dismissal, persistent assisti
 
 ### Notification refinement verification — 31 October 2026
 
-Lint, TypeScript, production build, 61 unit/database tests, 67 Chromium browser regressions, three WebKit startup regressions and the production WebSocket masked-frame check passed. These runs include exact toast timing and replacement, longer-lived copy errors, paused expiry, safe rendering, keyboard geometry, data-permission-disabled input, minimized notifications and 2,005-message deduplication history. Physical devices and real two-client chat/media were not re-certified in this run; the PR remains draft pending that acceptance.
+Lint, TypeScript, production build, 61 unit/database tests, 67 Chromium browser regressions, three WebKit startup regressions and the production WebSocket masked-frame check passed. These runs include exact toast timing and replacement (including real Chromium browser fullscreen), longer-lived copy errors, paused expiry, safe rendering, keyboard geometry, data-permission-disabled input, minimized notifications and 2,005-message deduplication history. Physical devices and real two-client chat/media were not re-certified in this run; the PR remains draft pending that acceptance.
