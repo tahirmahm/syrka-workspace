@@ -347,10 +347,76 @@ try {
     topics: snapshot.note.body.topics.length,
     actions: snapshot.note.body.actions.length,
   };
-  await api(1, { action: "consent", roomId: room, consent: false });
+  const view = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+  });
+  await view.addInitScript(
+    ({ session, origin }) => {
+      if (location.origin === origin)
+        localStorage.setItem(
+          "sb-zguejzlseldovdssiumn-auth-token",
+          JSON.stringify(session),
+        );
+    },
+    { session: actors[0].session, origin: new URL(target).origin },
+  );
+  const screen = await view.newPage();
+  await screen.goto(target + "/workspace/sessions/meeting/" + room, {
+    waitUntil: "domcontentloaded",
+  });
+  await screen
+    .getByRole("heading", { name: "Live Transcript", exact: true })
+    .waitFor({ timeout: 30000 });
+  await screen
+    .locator(".session-tabs")
+    .getByRole("button", { name: "Notes", exact: true })
+    .click();
+  await screen
+    .getByRole("heading", { name: "Overview", exact: true })
+    .waitFor();
   check(
-    "Consent revocation disables further transcription",
-    !(await api(0, null, room)).room.transcribing,
+    "Actual saved transcript and Qwen notes reopen in authenticated Workspace UI",
+    (await screen
+      .getByRole("log", { name: "Live transcript segments" })
+      .locator("article")
+      .count()) > 0,
+  );
+  await screen.locator(".speech-consent-details>summary").click();
+  result.layouts = [];
+  for (const width of [390, 1440]) {
+    await screen.setViewportSize({ width, height: 844 });
+    const overflow = await screen.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth + 1,
+    );
+    result.layouts.push({ width, overflow });
+    check("Authenticated transcript/notes UI fits " + width + "px", !overflow);
+  }
+  await view.close();
+  await guestRequest({ action: "consent", consent: false }, cookie);
+  form.set("request_id", randomUUID());
+  const deniedGuest = await fetch(target + "/workspace/api/sessions/guest", {
+    method: "POST",
+    headers: { Origin: target, Cookie: cookie },
+    body: form,
+  });
+  check(
+    "Guest revocation prevents new external speech processing",
+    [400, 403].includes(deniedGuest.status),
+  );
+  await api(1, { action: "consent", roomId: room, consent: false });
+  form.set("request_id", randomUUID());
+  const deniedMember = await fetch(target + "/workspace/api/sessions", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + actors[0].session.access_token },
+    body: form,
+  });
+  check(
+    "Signed-in member revocation blocks all new ASR",
+    [400, 403].includes(deniedMember.status),
+  );
+  check(
+    "Revocation leaves the existing transcript intact",
+    (await api(0, null, room)).segments.length === withGuest.segments.length,
   );
   result.status = "PASS";
 } catch (e) {

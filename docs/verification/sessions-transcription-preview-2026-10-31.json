@@ -1,0 +1,174 @@
+{
+  "sha": "4244f33113c270203ea033cf41434cf1658f26ad",
+  "url": "https://syrka-workspace-preview.vercel.app",
+  "checks": [
+    "Exact Preview runtime SHA and enabled free-quota PCM speech/AI",
+    "Actual browser worklet microphone batches reach ASR for QA identity 1",
+    "Actual browser worklet microphone batches reach ASR for QA identity 2",
+    "Both authenticated microphone owners have persisted recognized speech",
+    "Unshared transcript remains private",
+    "Authorized shared transcript retrieval works",
+    "Account-free guest explicitly consents",
+    "Actual scoped guest ASR accepts consented speech",
+    "Guest speech persisted with scoped microphone-owner attribution",
+    "Account-free guest cannot retrieve private transcript or notes",
+    "qwen3.8-flash notes generated from browser-captured speech and saved",
+    "Actual saved transcript and Qwen notes reopen in authenticated Workspace UI",
+    "Authenticated transcript/notes UI fits 390px",
+    "Authenticated transcript/notes UI fits 1440px",
+    "Guest revocation prevents new external speech processing",
+    "Signed-in member revocation blocks all new ASR",
+    "Revocation leaves the existing transcript intact"
+  ],
+  "batches": [
+    {
+      "participant": 1,
+      "batches": [
+        {
+          "status": 200,
+          "bytes": 128000,
+          "nonzero_audio": true,
+          "received_bytes": 128000,
+          "characters": 75,
+          "saved_segments": 1,
+          "asr": {
+            "model": "qwen3-asr-flash-realtime",
+            "transport": "outbound-websocket",
+            "events": {
+              "session.created": 1,
+              "session.updated": 1,
+              "other": 20,
+              "input_audio_buffer.committed": 1,
+              "conversation.item.input_audio_transcription.completed": 1,
+              "session.finished": 1
+            },
+            "signal": true
+          }
+        },
+        {
+          "status": 200,
+          "bytes": 128000,
+          "nonzero_audio": true,
+          "received_bytes": 128000,
+          "characters": 68,
+          "saved_segments": 1,
+          "asr": {
+            "model": "qwen3-asr-flash-realtime",
+            "transport": "outbound-websocket",
+            "events": {
+              "session.created": 1,
+              "session.updated": 1,
+              "other": 23,
+              "input_audio_buffer.committed": 1,
+              "conversation.item.input_audio_transcription.completed": 1,
+              "session.finished": 1
+            },
+            "signal": true
+          }
+        }
+      ],
+      "states": [
+        "running"
+      ],
+      "sent": 2
+    },
+    {
+      "participant": 2,
+      "batches": [
+        {
+          "status": 200,
+          "bytes": 128000,
+          "nonzero_audio": true,
+          "received_bytes": 128000,
+          "characters": 68,
+          "saved_segments": 1,
+          "asr": {
+            "model": "qwen3-asr-flash-realtime",
+            "transport": "outbound-websocket",
+            "events": {
+              "session.created": 1,
+              "session.updated": 1,
+              "other": 17,
+              "input_audio_buffer.committed": 1,
+              "conversation.item.input_audio_transcription.completed": 1,
+              "session.finished": 1
+            },
+            "signal": true
+          }
+        },
+        {
+          "status": 200,
+          "bytes": 128000,
+          "nonzero_audio": true,
+          "received_bytes": 128000,
+          "characters": 65,
+          "saved_segments": 1,
+          "asr": {
+            "model": "qwen3-asr-flash-realtime",
+            "transport": "outbound-websocket",
+            "events": {
+              "session.created": 1,
+              "session.updated": 1,
+              "other": 17,
+              "input_audio_buffer.committed": 1,
+              "conversation.item.input_audio_transcription.completed": 1,
+              "session.finished": 1
+            },
+            "signal": true
+          }
+        }
+      ],
+      "states": [
+        "running"
+      ],
+      "sent": 2
+    }
+  ],
+  "audio_source": "fictional synthesized microphone fixture",
+  "physical_participants_verified": false,
+  "livekit_rtp_verified": false,
+  "transcript": {
+    "segments": 4,
+    "characters": 276,
+    "sha256": "acfc0e5d7dc0ccbf78eaa06c46e9fad40a99a688ff1bf2e15c505cfb18e145e3"
+  },
+  "guest_audio": {
+    "http": 200,
+    "received_bytes": 128000,
+    "characters": 65,
+    "saved_segments": 1,
+    "asr": {
+      "model": "qwen3-asr-flash-realtime",
+      "transport": "outbound-websocket",
+      "events": {
+        "session.created": 1,
+        "session.updated": 1,
+        "other": 16,
+        "input_audio_buffer.committed": 1,
+        "conversation.item.input_audio_transcription.completed": 1,
+        "session.finished": 1
+      },
+      "signal": true
+    }
+  },
+  "notes": {
+    "overview": 1,
+    "topics": 1,
+    "actions": 2
+  },
+  "layouts": [
+    {
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "overflow": false
+    }
+  ],
+  "status": "PASS",
+  "cleanup": "Own QA meeting removed",
+  "checked_at": "2026-10-31T19:58:00.046Z",
+  "immutable_deployment": "https://syrka-workspace-ldgv0z4a2-tahirmahmood439wel-gmailcoms-projects.vercel.app",
+  "verification_scope": "Actual browser synthetic microphone frames, real ASR/text provider requests, real authenticated/scoped guest API and Postgres, plus real hosted UI readback. Not physical microphones or LiveKit media transport."
+}
