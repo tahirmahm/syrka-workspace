@@ -391,9 +391,8 @@ try {
     "Authenticated host sees scoped waiting identity",
     member?.guest_identity && member.status === "waiting",
   );
-  await pages[0].getByLabel("More call options", { exact: true }).click();
   await pages[0]
-    .getByRole("button", { name: "Toggle transcript and notes", exact: true })
+    .getByRole("button", { name: "Show participants", exact: true })
     .click();
   await pages[0]
     .locator(".session-member")
@@ -531,6 +530,12 @@ try {
     await pages[i].screenshot({
       path: `/tmp/syrka-scoped-guest-${i ? "mobile" : "desktop"}.png`,
     });
+    if (
+      !(await pages[i]
+        .getByRole("button", { name: "Leave meeting", exact: true })
+        .isVisible())
+    )
+      await pages[i].getByLabel("More call options", { exact: true }).click();
     await pages[i]
       .getByRole("button", { name: "Leave meeting", exact: true })
       .click();
@@ -546,6 +551,12 @@ try {
     .getByRole("button", { name: "Join meeting", exact: true })
     .click();
   await pages[1].getByRole("toolbar", { name: "Meeting controls" }).waitFor();
+  if (
+    !(await pages[1]
+      .getByRole("button", { name: "Leave meeting", exact: true })
+      .isVisible())
+  )
+    await pages[1].getByLabel("More call options", { exact: true }).click();
   await pages[1]
     .getByRole("button", { name: "Leave meeting", exact: true })
     .click();

@@ -1,5 +1,6 @@
 /** UI/API fixtures only: these assertions do not verify LiveKit media transport. */
 import { test, expect, type Page } from "@playwright/test";
+import type { Member } from "../../src/lib/sessions/model";
 import { AccessToken } from "livekit-server-sdk";
 const host = "10000000-0000-4000-8000-000000000001",
   guest = "10000000-0000-4000-8000-000000000002",
@@ -61,12 +62,22 @@ async function fixture(page: Page, actor = host, isGuest = false) {
     request: 0,
     approved: !isGuest,
     removed: false,
+    people: [] as Member[],
+    actions: [] as Record<string, unknown>[],
   };
   await page.route("**/rest/v1/rpc/session_invitation", (r) =>
     r.fulfill({ json: { title: "Instant meeting", host_name: "Host" } }),
   );
   await page.route("**/workspace/api/sessions**", async (route) => {
     const input = route.request().postDataJSON();
+    if (input) calls.actions.push(input);
+    if (input?.action === "member_update") {
+      const member = calls.people.find(
+        (member) => member.user_id === input.user_id,
+      );
+      if (member) Object.assign(member, input.patch);
+      return route.fulfill({ json: { ok: true } });
+    }
     if (input?.action === "create") {
       calls.create++;
       return route.fulfill({ json: { rooms: [room] } });
@@ -109,7 +120,7 @@ async function fixture(page: Page, actor = host, isGuest = false) {
       json: {
         room,
         me,
-        members: [me],
+        members: [me, ...calls.people],
         segments: [],
         note: null,
         jobs: [],
@@ -556,6 +567,159 @@ test("optional fullscreen exit without a Promise does not crash a minimized call
   await expect(page.locator("html#__next_error__")).toHaveCount(0);
   expect(calls.token).toBe(1);
   expect(errors).toEqual([]);
+  await page
+    .getByRole("button", { name: "Leave meeting", exact: true })
+    .click();
+});
+
+test("mobile has four black-stage controls and all secondary actions in More", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const calls = await fixture(page);
+  await page.addInitScript(
+    (value) =>
+      localStorage.setItem(
+        "sb-zguejzlseldovdssiumn-auth-token",
+        JSON.stringify(value),
+      ),
+    session(host),
+  );
+  await page.goto(`/workspace/sessions/meeting/${id}?start=1`);
+  const frame = page.locator(".session-call-frame");
+  await expect(frame).toBeVisible();
+  await expect(frame).toHaveCSS("background-color", "rgb(0, 0, 0)");
+  const toolbar = page.getByRole("toolbar", { name: "Meeting controls" });
+  await expect(
+    toolbar.locator(
+      ":scope > button:visible, :scope > details > summary:visible",
+    ),
+  ).toHaveCount(4);
+  expect(
+    await toolbar
+      .locator(
+        ":scope > button:visible > span:first-of-type, :scope > details > summary:visible > span",
+      )
+      .allTextContents(),
+  ).toEqual(["Mic", "Camera", "People", "More"]);
+  await expect(
+    page.getByRole("button", { name: "Enable Audio", exact: true }),
+  ).toHaveCount(0);
+  await page.getByLabel("More call options", { exact: true }).click();
+  for (const name of [
+    "Leave meeting",
+    "Picture-in-Picture",
+    "Open meeting chat",
+    "Toggle transcript and notes",
+    "Audio and camera settings",
+    "Full Screen",
+  ])
+    await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Leave meeting", exact: true }),
+  ).toHaveCSS("background-color", "rgb(181, 45, 60)");
+  await page
+    .getByRole("button", { name: "Audio and camera settings", exact: true })
+    .click();
+  const settings = page.getByRole("complementary", {
+    name: "Audio and camera settings",
+  });
+  await expect(settings).toBeVisible();
+  expect((await settings.boundingBox())!.height).toBeLessThan(812 * 0.65);
+  await page.getByRole("button", { name: "Close device settings" }).click();
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect(
+    toolbar.locator(
+      ":scope > button:visible, :scope > details > summary:visible",
+    ),
+  ).toHaveCount(4);
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(844);
+  await page.getByLabel("More call options", { exact: true }).click();
+  await page
+    .getByRole("button", { name: "Leave meeting", exact: true })
+    .click();
+  await expect(frame).toHaveCount(0);
+  expect(calls.token).toBe(1);
+});
+
+test("People receives waiting requests, admits or denies, and manages approved guests without Host Controls", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const calls = await fixture(page);
+  await page.addInitScript(
+    (value) =>
+      localStorage.setItem(
+        "sb-zguejzlseldovdssiumn-auth-token",
+        JSON.stringify(value),
+      ),
+    session(host),
+  );
+  await page.goto(`/workspace/sessions/meeting/${id}?start=1`);
+  await expect(page.locator(".session-call-frame")).toBeVisible();
+  calls.people.push({
+    room_id: id,
+    user_id: guest,
+    display_name: "Waiting guest",
+    status: "waiting",
+    consent: false,
+    can_publish: true,
+    is_guest: true,
+    guest_identity: true,
+  });
+  await expect(
+    page.getByLabel("1 waiting guests", { exact: true }),
+  ).toBeVisible({ timeout: 6000 });
+  await page
+    .getByRole("button", { name: "Show participants", exact: true })
+    .click();
+  const people = page.getByRole("complementary", { name: "People" });
+  await expect(people).toBeVisible();
+  expect((await people.boundingBox())!.height).toBeLessThan(844 * 0.65);
+  const waiting = people.locator(".call-waiting-room");
+  await expect(waiting).toContainText("Waiting guest");
+  await waiting.getByRole("button", { name: "Admit", exact: true }).click();
+  await expect(waiting).not.toContainText("Waiting guest");
+  await expect(
+    page.getByLabel("1 waiting guests", { exact: true }),
+  ).toHaveCount(0);
+  const admitted = people
+    .locator(".call-admitted-person")
+    .filter({ hasText: "Waiting guest" });
+  await expect(admitted).toBeVisible();
+  await expect(admitted).toContainText("Admitted");
+  await admitted
+    .getByRole("button", { name: "Mute microphone", exact: true })
+    .click();
+  expect(
+    calls.actions.some(
+      (action) =>
+        action.action === "mute_member" &&
+        action.user_id === guest &&
+        action.guest_identity === true,
+    ),
+  ).toBe(true);
+  await admitted.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(admitted).toHaveCount(0);
+  calls.people.push({
+    room_id: id,
+    user_id: "10000000-0000-4000-8000-000000000003",
+    display_name: "Denied guest",
+    status: "waiting",
+    consent: false,
+    can_publish: true,
+    is_guest: true,
+    guest_identity: true,
+  });
+  await expect(waiting).toContainText("Denied guest", { timeout: 6000 });
+  await waiting.getByRole("button", { name: "Deny", exact: true }).click();
+  await expect(waiting).not.toContainText("Denied guest");
+  await page.getByRole("button", { name: "Close participants" }).click();
+  await expect(people).toHaveCount(0);
+  expect(calls.token).toBe(1);
+  await page.getByLabel("More call options", { exact: true }).click();
   await page
     .getByRole("button", { name: "Leave meeting", exact: true })
     .click();

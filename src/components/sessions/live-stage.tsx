@@ -33,7 +33,6 @@ import {
   Settings2,
   UserRound,
   MessageSquare,
-  Send,
   PictureInPicture2,
   Minimize2,
   Maximize2,
@@ -50,6 +49,14 @@ import {
 import { capturePcm } from "@/lib/sessions/pcm";
 import type { CallPresentation } from "./call-context";
 import type { CallDevices } from "./device-preview";
+import LiveComments from "./live-comments";
+import PeoplePanel, { type PeopleManagement } from "./people-panel";
+import {
+  activeNativePip,
+  enterNativePip,
+  exitNativePip,
+  type PipVideo,
+} from "@/lib/sessions/native-pip";
 import type { SessionSource } from "@/lib/sessions/model";
 function SpeechCapture({
   guestAccess = false,
@@ -258,7 +265,11 @@ function CallCanvas({
   title,
   presentation,
   speechControls,
+  peopleManagement,
+  source,
 }: {
+  source: SessionSource;
+  peopleManagement?: PeopleManagement;
   speechControls?: React.ReactNode;
   title: string;
   presentation?: CallPresentation;
@@ -274,6 +285,9 @@ function CallCanvas({
   const [layout, setLayout] = useState<"auto" | "grid" | "speaker">("auto");
   const [pip, setPip] = useState(false);
   const [sharingFeedback, setSharingFeedback] = useState("");
+  const [pipNotice, setPipNotice] = useState("");
+  const pipVideo = useRef<PipVideo | null>(null);
+  const pipListeners = useRef<() => void>(() => {});
   const room = useRoomContext();
   const state = useConnectionState();
   const participants = useParticipants();
@@ -316,36 +330,18 @@ function CallCanvas({
   const focused =
     presentation?.minimized ||
     layout === "speaker" ||
-    (layout === "auto" && !!screen);
-  const nativePip =
-    typeof document !== "undefined" &&
-    document.pictureInPictureEnabled &&
-    typeof HTMLVideoElement.prototype.requestPictureInPicture === "function";
-  useEffect(() => {
-    const node = frame.current;
-    const update = () =>
-      setPip(
-        !!document.pictureInPictureElement &&
-          !!node?.contains(document.pictureInPictureElement),
-      );
-    node?.addEventListener("enterpictureinpicture", update, true);
-    node?.addEventListener("leavepictureinpicture", update, true);
-    return () => {
-      node?.removeEventListener("enterpictureinpicture", update, true);
-      node?.removeEventListener("leavepictureinpicture", update, true);
-      if (
-        document.pictureInPictureElement &&
-        node?.contains(document.pictureInPictureElement)
-      )
-        void document.exitPictureInPicture().catch(() => {});
-    };
-  }, []);
+    (layout === "auto" && (!!screen || participants.length <= 2));
+  useEffect(
+    () => () => {
+      pipListeners.current();
+      if (pipVideo.current) void exitNativePip(pipVideo.current);
+    },
+    [],
+  );
   async function pictureInPicture() {
-    if (
-      document.pictureInPictureElement &&
-      frame.current?.contains(document.pictureInPictureElement)
-    ) {
-      await document.exitPictureInPicture().catch(() => {});
+    if (pipVideo.current && activeNativePip(pipVideo.current)) {
+      await exitNativePip(pipVideo.current);
+      setPip(false);
       return;
     }
     const tiles = [
@@ -353,7 +349,7 @@ function CallCanvas({
         "[data-participant-identity]",
       ) || []),
     ];
-    const playableRemote =
+    const selected =
       tracks.find(
         (t) =>
           !t.participant.isLocal &&
@@ -371,29 +367,41 @@ function CallCanvas({
           !t.publication.isMuted,
       ) ||
       focus;
-    const tile =
-      tiles.find(
-        (t) =>
-          t.dataset.participantIdentity ===
-            playableRemote?.participant.identity &&
-          t.dataset.sessionSource === playableRemote?.source,
-      ) || tiles[0];
-    const video = tile?.querySelector<HTMLVideoElement>("video");
-    if (!nativePip || !video || video.readyState < 2) {
-      if (presentation) presentation.onMinimize();
-      onError(
-        nativePip
-          ? "No playable participant video yet. The call stays available in Workspace's floating window."
-          : "Native Picture-in-Picture is unavailable. Use the floating call inside Workspace; it cannot appear over other applications.",
-      );
-      return;
-    }
+    const tile = tiles.find(
+      (t) =>
+        t.dataset.participantIdentity === selected?.participant.identity &&
+        t.dataset.sessionSource === selected?.source,
+    );
+    const video = tile?.querySelector<PipVideo>("video");
     try {
-      await video.requestPictureInPicture();
-    } catch {
-      onError(
-        "Picture-in-Picture could not open. Your browser may require a user gesture or block this feature. The call remains connected.",
+      if (!video)
+        throw Error("No playable participant video is available yet.");
+      pipListeners.current();
+      pipVideo.current = video;
+      const update = () => {
+        const active = activeNativePip(video);
+        setPip(active);
+        if (!active) setPipNotice("");
+      };
+      const events = [
+        "enterpictureinpicture",
+        "leavepictureinpicture",
+        "webkitpresentationmodechanged",
+      ];
+      events.forEach((event) => video.addEventListener(event, update));
+      pipListeners.current = () =>
+        events.forEach((event) => video.removeEventListener(event, update));
+      await enterNativePip(video);
+      setPip(true);
+      setPipNotice(
+        "System Picture-in-Picture is active. Background playback is controlled by your browser and operating system.",
       );
+    } catch (error) {
+      setPip(false);
+      setPipNotice(
+        `${error instanceof Error ? error.message : "Native Picture-in-Picture was blocked."} Workspace floating mode is active inside this tab only.`,
+      );
+      presentation?.onMinimize();
     }
   }
   async function fullscreen() {
@@ -410,10 +418,73 @@ function CallCanvas({
       );
     }
   }
-  const { canPlayAudio, mergedProps } = useStartAudio({ props: {} });
+  const { canPlayAudio } = useStartAudio({ props: {} });
+  const incomingAudio = useTracks(
+    [Track.Source.Microphone, Track.Source.ScreenShareAudio],
+    { onlySubscribed: true },
+  ).some(
+    (t) =>
+      !t.participant.isLocal && !!t.publication.track && !t.publication.isMuted,
+  );
+  const [enablingAudio, setEnablingAudio] = useState(false);
+  const [audioError, setAudioError] = useState("");
+  const [devicesOpen, setDevicesOpen] = useState(false);
+  const waitingCount = peopleManagement?.isHost
+    ? peopleManagement.members.filter((m) => m.status === "waiting").length
+    : 0;
+  async function enableAudio() {
+    setEnablingAudio(true);
+    setAudioError("");
+    try {
+      await room.startAudio();
+      if (!room.canPlaybackAudio)
+        setAudioError(
+          "Your browser still blocks playback. Tap Enable Audio again and check device output/volume.",
+        );
+    } catch {
+      setAudioError(
+        "Audio playback could not start. Tap Enable Audio to retry.",
+      );
+    } finally {
+      setEnablingAudio(false);
+    }
+  }
+  function openPeople() {
+    if (panelOpen) onPanel();
+    setChat(false);
+    setDevicesOpen(false);
+    if (!people) peopleManagement?.refresh();
+    setPeople(!people);
+  }
+  function openChat() {
+    if (panelOpen) onPanel();
+    setPeople(false);
+    setDevicesOpen(false);
+    setChat(false);
+    setLiveChat(true);
+  }
+  function openNotes() {
+    setPeople(false);
+    setChat(false);
+    setDevicesOpen(false);
+    onPanel();
+  }
+  function openDevices() {
+    if (panelOpen) onPanel();
+    setPeople(false);
+    setChat(false);
+    setDevicesOpen(!devicesOpen);
+  }
+  function leave() {
+    if (pipVideo.current) void exitNativePip(pipVideo.current);
+    void room.disconnect(true);
+    onLeave();
+  }
+
   const [people, setPeople] = useState(false);
   const [chat, setChat] = useState(false);
-  const [chatText, setChatText] = useState("");
+  const [liveChat, setLiveChat] = useState(false);
+  const [hideComments, setHideComments] = useState(false);
   const { chatMessages, send, isSending } = useChat();
   const [working, setWorking] = useState(false);
   const [slowConnection, setSlowConnection] = useState(false);
@@ -462,10 +533,86 @@ function CallCanvas({
       setWorking(false);
     }
   }
+  const supportsShare =
+    typeof navigator !== "undefined" &&
+    !!navigator.mediaDevices?.getDisplayMedia;
+  function renderShare(extra = "") {
+    return supportsShare ? (
+      <button
+        className={extra}
+        aria-label={
+          isScreenShareEnabled ? "Stop sharing screen" : "Share screen"
+        }
+        aria-pressed={isScreenShareEnabled}
+        disabled={
+          working ||
+          (!isScreenShareEnabled &&
+            (!publishing ||
+              (!!permissions?.canPublishSources?.length &&
+                !permissions.canPublishSources.includes(
+                  TrackSource.SCREEN_SHARE,
+                ))))
+        }
+        onClick={() => void toggle("screen")}
+      >
+        <MonitorUp size={19} />
+        <span>
+          {isScreenShareEnabled
+            ? "Stop sharing"
+            : extra
+              ? "Share"
+              : "Share screen"}
+        </span>
+      </button>
+    ) : null;
+  }
+  function renderChat(extra = "") {
+    return (
+      <button
+        className={extra}
+        aria-label="Open meeting chat"
+        aria-expanded={chat}
+        onClick={openChat}
+      >
+        <MessageSquare size={19} />
+        <span>Chat</span>
+      </button>
+    );
+  }
+  function renderPip(extra = "") {
+    return (
+      <button
+        className={extra}
+        aria-label={pip ? "Exit Picture-in-Picture" : "Picture-in-Picture"}
+        aria-pressed={pip}
+        onClick={() => void pictureInPicture()}
+      >
+        <PictureInPicture2 size={19} />
+        <span>
+          {extra ? "PiP" : pip ? "Exit system PiP" : "Picture-in-Picture"}
+        </span>
+      </button>
+    );
+  }
+  function renderLeave(extra = "") {
+    return (
+      <button
+        className={`session-call-leave ${extra}`}
+        aria-label="Leave meeting"
+        onClick={leave}
+      >
+        <PhoneOff size={19} />
+        <span>{extra ? "Leave" : "Leave meeting"}</span>
+      </button>
+    );
+  }
   return (
     <div ref={frame} className="session-call-frame" data-call-state={state}>
       <div className="session-call-status">
         <strong className="call-meeting-title">{title}</strong>
+        {presentation?.minimized && (
+          <small className="call-mini-mode">Workspace floating</small>
+        )}
         {presentation && (
           <button
             className="call-return"
@@ -510,9 +657,7 @@ function CallCanvas({
           transcription consent are not required for calling.
         </p>
       )}
-      <div
-        className={`session-call-body ${people || chat ? "with-people" : ""}`}
-      >
+      <div className="session-call-body">
         <div
           className={`session-call-grid ${focused ? "call-focused" : ""}`}
           aria-label="Meeting video stage"
@@ -573,9 +718,9 @@ function CallCanvas({
           )}
         </div>
         {people && (
-          <aside className="session-people" aria-label="Connected participants">
+          <aside className="session-people" aria-label="People">
             <h3>
-              Participants
+              People
               <button
                 aria-label="Close participants"
                 onClick={() => setPeople(false)}
@@ -583,32 +728,11 @@ function CallCanvas({
                 <X size={15} />
               </button>
             </h3>
-            {!mediaVisible && (
-              <p>
-                Participants appear after the media connection is established.
-              </p>
-            )}
-            {mediaVisible &&
-              participants.map((p) => (
-                <div key={p.identity}>
-                  <strong>
-                    {p.name || "Participant"}
-                    {p.isLocal ? " (you)" : ""}
-                  </strong>
-                  <span>
-                    {p.isMicrophoneEnabled ? (
-                      <Mic size={14} aria-label="Microphone on" />
-                    ) : (
-                      <MicOff size={14} aria-label="Microphone off" />
-                    )}
-                    {p.isCameraEnabled ? (
-                      <Video size={14} aria-label="Camera on" />
-                    ) : (
-                      <VideoOff size={14} aria-label="Camera off" />
-                    )}
-                  </span>
-                </div>
-              ))}
+            <PeoplePanel
+              management={peopleManagement}
+              participants={mediaVisible ? participants : []}
+              source={source}
+            />
           </aside>
         )}
         {chat && (
@@ -635,46 +759,34 @@ function CallCanvas({
                 </article>
               ))}
             </div>
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                if (!chatText.trim()) return;
-                try {
-                  await send(chatText.trim());
-                  setChatText("");
-                } catch {
-                  onError(
-                    "Message could not be sent. Check your connection and try again.",
-                  );
-                }
-              }}
-            >
-              <label className="sr-only" htmlFor="session-chat-message">
-                Message
-              </label>
-              <input
-                id="session-chat-message"
-                aria-label="Call message"
-                value={chatText}
-                onChange={(e) => setChatText(e.target.value)}
-                maxLength={2000}
-                disabled={!connected}
-              />
-              <button
-                aria-label="Send message"
-                disabled={
-                  !connected ||
-                  isSending ||
-                  !chatText.trim() ||
-                  permissions?.canPublishData === false
-                }
-              >
-                <Send size={17} />
-              </button>
-            </form>
           </aside>
         )}
       </div>
+      <LiveComments
+        messages={chatMessages}
+        active={
+          liveChat &&
+          !people &&
+          !panelOpen &&
+          !devicesOpen &&
+          !presentation?.minimized
+        }
+        hidden={hideComments || !!presentation?.minimized}
+        obstructed={people || chat || panelOpen || devicesOpen || !!screen}
+        connected={connected}
+        sending={isSending}
+        canSend={permissions?.canPublishData !== false}
+        send={send}
+        onHistory={() => {
+          if (panelOpen) onPanel();
+          setPeople(false);
+          setDevicesOpen(false);
+          setChat(true);
+          setLiveChat(true);
+        }}
+        onClose={() => setLiveChat(false)}
+        onError={onError}
+      />
       {sharingFeedback && isScreenShareEnabled && (
         <p className="call-share-feedback" role="status">
           {sharingFeedback}
@@ -685,12 +797,19 @@ function CallCanvas({
           {screen.participant.name || "Participant"} is presenting
         </p>
       )}
-      {!canPlayAudio && (
-        <button {...mergedProps} className="session-start-audio">
-          <Volume2 size={16} />
-          Enable speaker playback
-        </button>
+      {mediaVisible && incomingAudio && !canPlayAudio && (
+        <div className="call-audio-unlock" role="status">
+          <Volume2 size={17} />
+          <span>
+            {audioError ||
+              "Your browser needs permission to play incoming audio."}
+          </span>
+          <button disabled={enablingAudio} onClick={() => void enableAudio()}>
+            {enablingAudio ? "Enabling…" : "Enable Audio"}
+          </button>
+        </div>
       )}
+
       {permissions?.canPublish === false && (
         <p className="session-call-permission" role="status">
           The host has disabled your microphone, camera and screen sharing. You
@@ -703,6 +822,7 @@ function CallCanvas({
         aria-label="Meeting controls"
       >
         <button
+          data-primary-control="mic"
           aria-label={
             isMicrophoneEnabled ? "Mute microphone" : "Unmute microphone"
           }
@@ -714,6 +834,7 @@ function CallCanvas({
           <span>Mic</span>
         </button>
         <button
+          data-primary-control="camera"
           aria-label={isCameraEnabled ? "Turn camera off" : "Turn camera on"}
           aria-pressed={isCameraEnabled}
           disabled={working || (!publishing && !isCameraEnabled)}
@@ -722,61 +843,29 @@ function CallCanvas({
           {isCameraEnabled ? <Video size={19} /> : <VideoOff size={19} />}
           <span>Camera</span>
         </button>
-        {typeof navigator !== "undefined" &&
-          !!navigator.mediaDevices?.getDisplayMedia && (
-            <button
-              aria-label={
-                isScreenShareEnabled ? "Stop sharing screen" : "Share screen"
-              }
-              aria-pressed={isScreenShareEnabled}
-              disabled={
-                working ||
-                (!isScreenShareEnabled &&
-                  (!publishing ||
-                    (!!permissions?.canPublishSources?.length &&
-                      !permissions.canPublishSources.includes(
-                        TrackSource.SCREEN_SHARE,
-                      ))))
-              }
-              onClick={() => void toggle("screen")}
-            >
-              <MonitorUp size={19} />
-              <span>Share</span>
-            </button>
-          )}
+        {renderShare("call-desktop-control")}
         <button
+          data-primary-control="people"
           aria-label="Show participants"
+          aria-describedby={waitingCount ? "call-waiting-count" : undefined}
           aria-expanded={people}
-          onClick={() => {
-            if (panelOpen) onPanel();
-            setPeople(!people);
-            setChat(false);
-          }}
+          onClick={openPeople}
         >
           <Users size={19} />
           <span>People</span>
+          {waitingCount > 0 && (
+            <span
+              id="call-waiting-count"
+              className="call-waiting-count"
+              aria-label={`${waitingCount} waiting guests`}
+            >
+              {waitingCount}
+            </span>
+          )}
         </button>
-        <button
-          aria-label="Open meeting chat"
-          aria-expanded={chat}
-          onClick={() => {
-            if (panelOpen) onPanel();
-            setChat(!chat);
-            setPeople(false);
-          }}
-        >
-          <MessageSquare size={19} />
-          <span>Chat</span>
-        </button>
-        <button
-          aria-label={pip ? "Exit Picture-in-Picture" : "Picture-in-Picture"}
-          aria-pressed={pip}
-          onClick={() => void pictureInPicture()}
-        >
-          <PictureInPicture2 size={19} />
-          <span>PiP</span>
-        </button>
-        <details ref={more} className="call-more">
+
+        {renderPip("call-desktop-control")}
+        <details ref={more} className="call-more" data-primary-control="more">
           <summary aria-label="More call options">
             <MoreHorizontal size={19} />
             <span>More</span>
@@ -794,6 +883,25 @@ function CallCanvas({
               <Copy size={17} />
               Copy invitation
             </button>
+            {renderShare() || (
+              <p>
+                Screen capture is unavailable in this browser. You can still
+                view presentations.
+              </p>
+            )}
+            {renderPip()}
+            {pipNotice && (
+              <p className="call-pip-feedback" role="status">
+                {pipNotice}
+              </p>
+            )}
+            {renderChat()}
+            <button
+              onClick={() => setHideComments(!hideComments)}
+              aria-pressed={hideComments}
+            >
+              {hideComments ? "Show live comments" : "Hide live comments"}
+            </button>
             <button
               aria-label={
                 panelLabel === "Consent"
@@ -801,17 +909,26 @@ function CallCanvas({
                   : "Toggle transcript and notes"
               }
               aria-expanded={panelOpen}
-              onClick={() => {
-                setPeople(false);
-                setChat(false);
-                onPanel();
-              }}
+              onClick={openNotes}
             >
               <PanelRight size={17} />
               {panelLabel === "Consent"
                 ? "Transcription consent"
-                : "Notes & host controls"}
+                : "Notes & transcription"}
             </button>
+            <button
+              aria-label="Audio and camera settings"
+              onClick={openDevices}
+            >
+              <Settings2 size={17} />
+              Audio & camera settings
+            </button>
+            {peopleManagement?.isHost && (
+              <button onClick={openNotes}>
+                <Settings2 size={17} />
+                Meeting settings
+              </button>
+            )}
             <button
               aria-label={
                 layout === "grid" ? "Focus speaker" : "Show grid view"
@@ -842,49 +959,71 @@ function CallCanvas({
                 Minimize to Workspace
               </button>
             )}
+            {renderLeave()}
           </div>
         </details>
-        <button
-          className="session-call-leave"
-          aria-label="Leave meeting"
-          onClick={() => {
-            void room.disconnect(true);
-            onLeave();
-          }}
-        >
-          <PhoneOff size={19} />
-          <span>Leave</span>
-        </button>
+        {renderLeave("call-desktop-control")}
       </div>
-      {connected && permissions?.canPublish !== false && (
-        <details className="session-devices">
-          <summary>
-            <Settings2 size={14} />
-            Audio & camera devices
-          </summary>
-          <div>
-            <section aria-label="Microphone devices">
-              <h4>Microphone</h4>
-              <MediaDeviceSelect
-                kind="audioinput"
-                onError={() =>
-                  onError(
-                    "Microphone selection failed. Check browser permissions.",
-                  )
-                }
-              />
-            </section>
-            <section aria-label="Camera devices">
-              <h4>Camera</h4>
-              <MediaDeviceSelect
-                kind="videoinput"
-                onError={() =>
-                  onError("Camera selection failed. Check browser permissions.")
-                }
-              />
-            </section>
-          </div>
-        </details>
+      {devicesOpen && (
+        <aside
+          className="session-people call-device-sheet"
+          aria-label="Audio and camera settings"
+        >
+          <h3>
+            Audio & camera
+            <button
+              aria-label="Close device settings"
+              onClick={() => setDevicesOpen(false)}
+            >
+              <X size={16} />
+            </button>
+          </h3>
+          {connected && permissions?.canPublish !== false ? (
+            <>
+              <section aria-label="Microphone devices">
+                <h4>Microphone</h4>
+                <MediaDeviceSelect
+                  kind="audioinput"
+                  onError={() =>
+                    onError("Microphone selection failed. Check permissions.")
+                  }
+                />
+              </section>
+              <section aria-label="Camera devices">
+                <h4>Camera</h4>
+                <MediaDeviceSelect
+                  kind="videoinput"
+                  onError={() =>
+                    onError("Camera selection failed. Check permissions.")
+                  }
+                />
+              </section>
+            </>
+          ) : (
+            <p>
+              Input devices become available after connection with publication
+              permission.
+            </p>
+          )}
+          <p>
+            Speaker output and volume are controlled by your browser and device.
+            A connected room does not prove sound is playing.
+          </p>
+          {connected &&
+            typeof HTMLMediaElement.prototype.setSinkId === "function" && (
+              <section aria-label="Speaker devices">
+                <h4>Speaker output</h4>
+                <MediaDeviceSelect
+                  kind="audiooutput"
+                  onError={() =>
+                    onError(
+                      "Speaker output could not be changed in this browser.",
+                    )
+                  }
+                />
+              </section>
+            )}
+        </aside>
       )}
       <RoomAudioRenderer />
     </div>
@@ -909,7 +1048,9 @@ export default function LiveStage({
   devices = {},
   panelLabel = "Notes",
   guestAccess = false,
+  peopleManagement,
 }: {
+  peopleManagement?: PeopleManagement;
   title?: string;
   presentation?: CallPresentation;
   guestAccess?: boolean;
@@ -983,6 +1124,8 @@ export default function LiveStage({
           onError={handleConnectionError}
         >
           <CallCanvas
+            source={source}
+            peopleManagement={peopleManagement}
             speechControls={
               <label>
                 Speech language

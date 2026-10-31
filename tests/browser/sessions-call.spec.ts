@@ -102,9 +102,12 @@ for (const viewport of [
     ).toBeDisabled();
     await page.getByRole("button", { name: "Show participants" }).click();
     await expect(
-      page.getByRole("complementary", { name: "Connected participants" }),
+      page.getByRole("complementary", { name: "People" }),
     ).toBeVisible();
+    await page.getByLabel("More call options", { exact: true }).click();
     await page.getByRole("button", { name: "Open meeting chat" }).click();
+    await expect(page.getByLabel("Call message", {exact:true})).toBeVisible();
+    await page.getByRole("button", {name:"Open full chat history"}).click();
     await expect(
       page.getByRole("complementary", { name: "Meeting chat" }),
     ).toBeVisible();
@@ -133,12 +136,14 @@ for (const viewport of [
       .getByRole("button", { name: "Show participants", exact: true })
       .click();
     await expect(
-      page.getByRole("complementary", { name: "Connected participants" }),
+      page.getByRole("complementary", { name: "People" }),
     ).toBeVisible();
     await expect(page.locator(".session-side-panel")).not.toHaveAttribute(
       "open",
       "",
     );
+    if (viewport.width < 650)
+      await page.getByLabel("More call options", { exact: true }).click();
     await page
       .getByRole("button", { name: "Leave meeting", exact: true })
       .click();

@@ -12,11 +12,11 @@ import {
   FileText,
   Download,
   ShieldCheck,
-  Users,
   Link2,
   Upload,
   PanelRight,
 } from "lucide-react";
+import PeoplePanel, { type PeopleManagement } from "./people-panel";
 import NotesReview from "./notes-review";
 import DevicePreview, { type CallDevices } from "./device-preview";
 import { Auth } from "@/components/auth";
@@ -246,7 +246,18 @@ export default function Meeting({
   );
   useEffect(() => {
     void load(true);
-    const timer = setInterval(() => void load(), 5000);
+    let refreshedAt = Date.now();
+    const timer = setInterval(() => {
+      const current = latest.current;
+      const cadence =
+        activeCall.current && current?.room.owner_id === current?.user_id
+          ? 2000
+          : 5000;
+      if (Date.now() - refreshedAt >= cadence) {
+        refreshedAt = Date.now();
+        void load();
+      }
+    }, 1000);
     return () => clearInterval(timer);
   }, [load]);
   useEffect(() => {
@@ -487,6 +498,42 @@ export default function Meeting({
     }
   }
   const host = !!snapshot && snapshot.room.owner_id === snapshot.user_id;
+  const peopleManagement: PeopleManagement | undefined = snapshot
+    ? {
+        members: snapshot.members,
+        ownerId: snapshot.room.owner_id,
+        isHost: host,
+        busy,
+        refresh: () => {
+          void load();
+        },
+        manage: (member, patch) => {
+          void action({
+            action: "member_update",
+            user_id: member.user_id,
+            guest_identity: !!member.guest_identity,
+            patch,
+          });
+        },
+        mute: (member) => {
+          void action(
+            {
+              action: "mute_member",
+              user_id: member.user_id,
+              guest_identity: !!member.guest_identity,
+            },
+            false,
+          ).then((result) => {
+            if (result)
+              setCallNotice(
+                result.muted
+                  ? "Participant microphone muted. They may choose to unmute again."
+                  : "This participant has no active microphone to mute.",
+              );
+          });
+        },
+      }
+    : undefined;
   const consented = !!snapshot?.members
     .filter((m) => m.status === "approved")
     .every((m) => m.consent);
@@ -632,6 +679,24 @@ export default function Meeting({
               Copy link
             </button>
           </header>
+          {host && !token && (
+            <details className="session-lobby-people">
+              <summary>
+                People ·{" "}
+                {
+                  snapshot.members.filter(
+                    (member) => member.status === "waiting",
+                  ).length
+                }{" "}
+                waiting
+              </summary>
+              <PeoplePanel
+                management={peopleManagement}
+                participants={[]}
+                source={source}
+              />
+            </details>
+          )}
           {source === "workspace" && isDemoMode() && (
             <div className="session-notice">
               <strong>Fictional demonstration data.</strong> Examples are not
@@ -704,6 +769,7 @@ export default function Meeting({
               {token ? (
                 <LiveStage
                   title={snapshot.room.title}
+                  peopleManagement={peopleManagement}
                   presentation={callPresentation}
                   onConnected={() => {
                     if (host && snapshot.room.status === "scheduled")
@@ -956,118 +1022,10 @@ export default function Meeting({
                             Delete records
                           </button>
                         </div>
-                        <h3>
-                          <Users size={16} />
-                          Participants & waiting room
-                        </h3>
-                        {snapshot.members.map((member) => (
-                          <div className="session-member" key={member.user_id}>
-                            {member.status === "approved" &&
-                              member.user_id !== snapshot.room.owner_id && (
-                                <label>
-                                  <input
-                                    type="checkbox"
-                                    checked={member.can_share_screen !== false}
-                                    onChange={(e) =>
-                                      void action({
-                                        action: "member_update",
-                                        user_id: member.user_id,
-                                        guest_identity: !!member.guest_identity,
-                                        patch: {
-                                          can_share_screen: e.target.checked,
-                                        },
-                                      })
-                                    }
-                                  />
-                                  Allow screen sharing for {member.display_name}
-                                </label>
-                              )}
-                            <span>
-                              {member.display_name}
-                              {member.is_guest ? " (guest)" : ""} ·{" "}
-                              {member.status} ·{" "}
-                              {member.consent ? "consented" : "not consented"}
-                            </span>
-                            {member.user_id !== snapshot.room.owner_id && (
-                              <>
-                                {member.status === "waiting" && (
-                                  <button
-                                    disabled={busy}
-                                    onClick={() =>
-                                      void action({
-                                        action: "member_update",
-                                        user_id: member.user_id,
-                                        guest_identity: !!member.guest_identity,
-                                        patch: { status: "approved" },
-                                      })
-                                    }
-                                  >
-                                    Admit
-                                  </button>
-                                )}
-                                {member.status === "approved" && (
-                                  <button
-                                    disabled={busy}
-                                    onClick={() =>
-                                      void action({
-                                        action: "member_update",
-                                        user_id: member.user_id,
-                                        guest_identity: !!member.guest_identity,
-                                        patch: {
-                                          can_publish: !member.can_publish,
-                                        },
-                                      })
-                                    }
-                                  >
-                                    {member.can_publish
-                                      ? "Disable microphone/camera/sharing"
-                                      : "Allow publishing"}
-                                  </button>
-                                )}
-                                {member.status === "approved" && (
-                                  <button
-                                    disabled={busy}
-                                    onClick={() => {
-                                      void action(
-                                        {
-                                          action: "mute_member",
-                                          user_id: member.user_id,
-                                          guest_identity:
-                                            !!member.guest_identity,
-                                        },
-                                        false,
-                                      ).then((result) => {
-                                        if (result)
-                                          setCallNotice(
-                                            result.muted
-                                              ? "Participant microphone muted. They can choose to unmute again."
-                                              : "This participant has no active microphone to mute.",
-                                          );
-                                      });
-                                    }}
-                                  >
-                                    Mute microphone
-                                  </button>
-                                )}
-                                <button
-                                  disabled={busy}
-                                  onClick={() =>
-                                    void action({
-                                      action: "member_update",
-                                      user_id: member.user_id,
-                                      guest_identity: !!member.guest_identity,
-                                      patch: { status: "removed" },
-                                    })
-                                  }
-                                >
-                                  {member.status === "waiting"
-                                    ? "Deny"
-                                    : "Remove"}
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        ))}
+                        <p>
+                          Admission and participant permissions are in the
+                          call’s People panel.
+                        </p>
                       </details>
                     )}
                     <nav className="session-tabs" aria-label="Session views">
