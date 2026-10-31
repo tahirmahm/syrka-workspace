@@ -6,7 +6,9 @@ function Harness() {
   const [messages, setMessages] = useState<ReceivedChatMessage[]>([]),
     [history, setHistory] = useState(false),
     [hidden, setHidden] = useState(false),
-    [active, setActive] = useState(true);
+    [active, setActive] = useState(true),
+    [compact, setCompact] = useState(false),
+    [allowed, setAllowed] = useState(true);
   const receive = (text: string, sender: string) =>
     setMessages((old) => [
       ...old,
@@ -31,6 +33,10 @@ function Harness() {
   return (
     <>
       <button onClick={() => setHidden(!hidden)}>Hide live comments</button>
+      <button onClick={() => setCompact(!compact)}>Minimize call</button>
+      <button onClick={() => setAllowed(!allowed)}>
+        Change chat permission
+      </button>
       {history && (
         <>
           <div role="log">
@@ -43,12 +49,13 @@ function Harness() {
       )}
       <LiveComments
         messages={messages}
-        active={active}
+        active={active && !compact}
+        compact={compact}
         hidden={hidden}
         obstructed={history}
         connected
         sending={false}
-        canSend
+        canSend={allowed}
         send={async (text) => receive(text, "Me")}
         onHistory={() => setHistory(true)}
         onClose={() => setActive(false)}

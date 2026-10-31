@@ -724,3 +724,74 @@ test("People receives waiting requests, admits or denies, and manages approved g
     .getByRole("button", { name: "Leave meeting", exact: true })
     .click();
 });
+
+test("copy invitation uses one compact one-second toast and clipboard errors remain readable", async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const calls = await fixture(page);
+  await page.addInitScript(
+    (value) =>
+      localStorage.setItem(
+        "sb-zguejzlseldovdssiumn-auth-token",
+        JSON.stringify(value),
+      ),
+    session(host),
+  );
+  await page.goto(`/workspace/sessions/meeting/${id}?start=1`);
+  await expect(page.locator(".session-call-frame")).toBeVisible();
+  await expect(page.getByPlaceholder("Message everyone…")).toBeVisible();
+  await page.clock.install();
+  const copy = async () => {
+    await page.getByLabel("More call options", { exact: true }).click();
+    await page
+      .getByRole("button", { name: "Copy meeting invitation", exact: true })
+      .click();
+  };
+  await copy();
+  const toast = page.locator(".call-copy-toast");
+  await expect(toast).toHaveText("Link copied");
+  const bounds = (await toast.boundingBox())!;
+  expect(bounds.height).toBeLessThan(40);
+  expect(bounds.width).toBeLessThan(140);
+  expect(bounds.y).toBeLessThan(80);
+  await expect(page.locator(".call-copy-toast-host")).toHaveCSS(
+    "pointer-events",
+    "none",
+  );
+  await page.clock.fastForward(999);
+  await expect(toast).toHaveCount(1);
+  await page.clock.fastForward(1);
+  await expect(toast).toHaveCount(0);
+  await expect(page.locator(".call-copy-toast-host [role=status]")).toHaveText(
+    "Link copied",
+  );
+  await copy();
+  await page.clock.fastForward(600);
+  await copy();
+  await expect(toast).toHaveCount(1);
+  await page.clock.fastForward(600);
+  await expect(toast).toHaveCount(1);
+  await page.clock.fastForward(400);
+  await expect(toast).toHaveCount(0);
+  await page.evaluate(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw Error("Clipboard blocked");
+        },
+      },
+    }),
+  );
+  await copy();
+  const error = page
+    .getByRole("alert")
+    .filter({ hasText: "Clipboard is unavailable" });
+  await expect(error).toBeVisible();
+  await page.clock.fastForward(3000);
+  await expect(error).toBeVisible();
+  expect(calls.token).toBe(1);
+});

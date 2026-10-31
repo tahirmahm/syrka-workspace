@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import CopyToast from "./copy-toast";
 import type { CallPresentation } from "./call-context";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -96,6 +97,7 @@ export default function Meeting({
   const [meetingClosed, setMeetingClosed] = useState(false);
   const [speechPaused, setSpeechPaused] = useState(false);
   const [callNotice, setCallNotice] = useState("");
+  const [copyNotice, setCopyNotice] = useState(0);
   const [origin, setOrigin] = useState("");
   useEffect(() => setOrigin(location.origin), []);
   const [display, setDisplay] = useState("");
@@ -369,11 +371,9 @@ export default function Meeting({
       await navigator.clipboard.writeText(
         location.origin + meetingLink(source, id),
       );
-      setCallNotice(
-        "Meeting invitation copied. Recipients must be admitted; guest access depends on the host’s settings.",
-      );
+      setCopyNotice((n) => n + 1);
     } catch {
-      setCallNotice(
+      setError(
         "Clipboard is unavailable. Open Invitation and select the meeting link to copy it.",
       );
     }
@@ -581,6 +581,7 @@ export default function Meeting({
           <button onClick={() => setError("")}>Dismiss</button>
         </div>
       )}
+      <CopyToast request={copyNotice} />
       {callNotice && (
         <p className="session-call-notice" role="status">
           {callNotice}

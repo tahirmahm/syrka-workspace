@@ -3,12 +3,19 @@ import { useEffect, useRef, useState } from "react";
 import { MessageSquare, Send, X } from "lucide-react";
 import type { ReceivedChatMessage } from "@livekit/components-react";
 
-type Comment = { id: string; name: string; text: string; expires: number };
+type Comment = {
+  id: string;
+  name: string;
+  text: string;
+  expires: number;
+  pausedAt?: number;
+};
 export default function LiveComments({
   messages,
   active,
   hidden,
   obstructed,
+  compact = false,
   connected,
   sending,
   canSend,
@@ -21,6 +28,7 @@ export default function LiveComments({
   active: boolean;
   hidden: boolean;
   obstructed: boolean;
+  compact?: boolean;
   connected: boolean;
   sending: boolean;
   canSend: boolean;
@@ -32,23 +40,29 @@ export default function LiveComments({
   const [comments, setComments] = useState<Comment[]>([]);
   const [text, setText] = useState("");
   const [keyboard, setKeyboard] = useState(0);
-  const seen = useRef(new Set<string>());
+  const seen = useRef(
+    new Set(
+      messages
+        .slice(-1000)
+        .map((m) => m.id || `${m.from?.identity}:${m.timestamp}:${m.message}`),
+    ),
+  );
+  const processed = useRef(messages.length);
   const received = useRef(new Map<string, number>());
   const lastSent = useRef(0);
   useEffect(() => {
     const now = Date.now();
     const additions: Comment[] = [];
-    for (const m of messages) {
+    // Process arrivals only: pruning deduplication must never replay old history.
+    const arrivals = messages.slice(processed.current);
+    processed.current = messages.length;
+    for (const m of arrivals) {
       const id = m.id || `${m.from?.identity}:${m.timestamp}:${m.message}`;
       if (seen.current.has(id)) continue;
       seen.current.add(id);
       const sender = m.from?.identity || "unknown";
       // Receive-side flood protection also applies to modified clients. Full history is untouched.
-      if (
-        now - m.timestamp > 8000 ||
-        now - (received.current.get(sender) || 0) < 1500
-      )
-        continue;
+      if (now - (received.current.get(sender) || 0) < 1500) continue;
       received.current.set(sender, now);
       additions.push({
         id,
@@ -59,7 +73,10 @@ export default function LiveComments({
     }
     if (additions.length)
       setComments((old) =>
-        [...old.filter((c) => c.expires > now), ...additions].slice(-3),
+        [
+          ...old.filter((c) => c.pausedAt || c.expires > now),
+          ...additions,
+        ].slice(-3),
       );
     // The transport already retains this call's history; bound only our deduplication cache.
     if (seen.current.size > 2000)
@@ -75,8 +92,8 @@ export default function LiveComments({
     const timer = setInterval(
       () =>
         setComments((old) =>
-          old.some((c) => c.expires <= Date.now())
-            ? old.filter((c) => c.expires > Date.now())
+          old.some((c) => !c.pausedAt && c.expires <= Date.now())
+            ? old.filter((c) => c.pausedAt || c.expires > Date.now())
             : old,
         ),
       250,
@@ -85,18 +102,55 @@ export default function LiveComments({
     const resize = () =>
       setKeyboard(
         viewport && window.innerHeight - viewport.height > 140
-          ? window.innerHeight - viewport.height - viewport.offsetTop
+          ? Math.max(
+              0,
+              window.innerHeight - viewport.height - viewport.offsetTop,
+            )
           : 0,
       );
     viewport?.addEventListener("resize", resize);
+    viewport?.addEventListener("scroll", resize);
+    window.addEventListener("resize", resize);
     return () => {
       clearInterval(timer);
       viewport?.removeEventListener("resize", resize);
+      viewport?.removeEventListener("scroll", resize);
+      window.removeEventListener("resize", resize);
     };
   }, []);
+  function pause(id: string) {
+    setComments((old) =>
+      old.map((c) =>
+        c.id === id && !c.pausedAt ? { ...c, pausedAt: Date.now() } : c,
+      ),
+    );
+  }
+  function resume(id: string) {
+    setComments((old) =>
+      old.map((c) =>
+        c.id === id && c.pausedAt
+          ? {
+              ...c,
+              expires: c.expires + Date.now() - c.pausedAt,
+              pausedAt: undefined,
+            }
+          : c,
+      ),
+    );
+  }
   return (
     <>
-      {!hidden && !obstructed && !keyboard && (
+      {!hidden && compact && comments.length > 0 && (
+        <button
+          className="call-mini-chat-notice"
+          onClick={onHistory}
+          aria-label="Return to call chat"
+        >
+          <MessageSquare size={14} />
+          {comments.length} new
+        </button>
+      )}
+      {!hidden && !compact && !obstructed && !keyboard && (
         <div
           className="call-live-comments"
           role="region"
@@ -111,7 +165,18 @@ export default function LiveComments({
             <button
               key={c.id}
               className="call-live-comment"
-              onClick={onHistory}
+              data-paused={!!c.pausedAt}
+              onFocus={() => pause(c.id)}
+              onBlur={() => resume(c.id)}
+              onPointerEnter={() => pause(c.id)}
+              onPointerLeave={() => resume(c.id)}
+              onPointerDown={() => pause(c.id)}
+              onPointerUp={() => resume(c.id)}
+              onPointerCancel={() => resume(c.id)}
+              onClick={() => {
+                resume(c.id);
+                onHistory();
+              }}
               aria-label={`Open chat: ${c.name}: ${c.text}`}
             >
               <strong>{c.name}</strong>
@@ -157,7 +222,9 @@ export default function LiveComments({
           <input
             id="session-chat-message"
             aria-label="Call message"
-            placeholder="Send a message…"
+            placeholder="Message everyone…"
+            enterKeyHint="send"
+            autoComplete="off"
             maxLength={2000}
             value={text}
             onChange={(e) => setText(e.target.value)}

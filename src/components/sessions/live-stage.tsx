@@ -460,7 +460,7 @@ function CallCanvas({
     if (panelOpen) onPanel();
     setPeople(false);
     setDevicesOpen(false);
-    setChat(false);
+    setChat(true);
     setLiveChat(true);
   }
   function openNotes() {
@@ -483,7 +483,7 @@ function CallCanvas({
 
   const [people, setPeople] = useState(false);
   const [chat, setChat] = useState(false);
-  const [liveChat, setLiveChat] = useState(false);
+  const [liveChat, setLiveChat] = useState(true);
   const [hideComments, setHideComments] = useState(false);
   const { chatMessages, send, isSending } = useChat();
   const [working, setWorking] = useState(false);
@@ -771,13 +771,15 @@ function CallCanvas({
           !devicesOpen &&
           !presentation?.minimized
         }
-        hidden={hideComments || !!presentation?.minimized}
+        hidden={hideComments}
+        compact={!!presentation?.minimized}
         obstructed={people || chat || panelOpen || devicesOpen || !!screen}
         connected={connected}
         sending={isSending}
         canSend={permissions?.canPublishData !== false}
         send={send}
         onHistory={() => {
+          if (presentation?.minimized) presentation.onRestore();
           if (panelOpen) onPanel();
           setPeople(false);
           setDevicesOpen(false);

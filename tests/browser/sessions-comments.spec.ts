@@ -99,6 +99,97 @@ test("live comments expire without deleting history, cap flooding, respect overl
   await expect(page.getByLabel("Call message", { exact: true })).toHaveCount(0);
 });
 
+test("comment interaction pauses expiry; safe text, minimized notifications and data permissions are preserved", async ({
+  page,
+}) => {
+  await page.route("**/comments-harness", (r) =>
+    r.fulfill({ contentType: "text/html", body: '<div id="root"></div>' }),
+  );
+  await page.goto("/comments-harness");
+  await page.addScriptTag({ content: bundle });
+  await page.waitForFunction(
+    () => document.body.dataset.commentsReady === "true",
+  );
+  await page.clock.install();
+  const text = '<img src=x onerror="window.__injected=true">';
+  await page.evaluate(
+    (text) =>
+      window.dispatchEvent(
+        new CustomEvent("qa-comment", { detail: { text, sender: "Guest" } }),
+      ),
+    text,
+  );
+  const comment = page.locator(".call-live-comment");
+  await expect(comment).toContainText(text);
+  await expect(comment.locator("img")).toHaveCount(0);
+  await page.clock.fastForward(6000);
+  await comment.focus();
+  await page.clock.fastForward(10000);
+  await expect(comment).toHaveCount(1);
+  await page.getByPlaceholder("Message everyone…").focus();
+  await page.clock.fastForward(1250);
+  await expect(comment).toHaveCount(0);
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new CustomEvent("qa-comment", {
+        detail: { text: "Mini notification", sender: "Host" },
+      }),
+    ),
+  );
+  await expect(comment).toHaveCount(1);
+  await page
+    .getByRole("button", { name: "Minimize call", exact: true })
+    .click();
+  await expect(comment).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Return to call chat" }),
+  ).toContainText("1 new");
+  await page
+    .getByRole("button", { name: "Minimize call", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Change chat permission" }).click();
+  await expect(page.getByLabel("Call message", { exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Send message", exact: true }),
+  ).toBeDisabled();
+});
+
+test("long chat history is not replayed into live comments after deduplication is bounded", async ({
+  page,
+}) => {
+  await page.route("**/comments-harness", (r) =>
+    r.fulfill({ contentType: "text/html", body: '<div id="root"></div>' }),
+  );
+  await page.goto("/comments-harness");
+  await page.addScriptTag({ content: bundle });
+  await page.waitForFunction(
+    () => document.body.dataset.commentsReady === "true",
+  );
+  await page.clock.install();
+  await page.evaluate(() => {
+    for (let i = 0; i < 2005; i++)
+      window.dispatchEvent(
+        new CustomEvent("qa-comment", {
+          detail: { text: `Old ${i}`, sender: "Old guest" },
+        }),
+      );
+  });
+  await expect(page.locator(".call-live-comment")).toHaveCount(1);
+  await page.clock.fastForward(8000);
+  await expect(page.locator(".call-live-comment")).toHaveCount(0);
+  await page.evaluate(() =>
+    window.dispatchEvent(
+      new CustomEvent("qa-comment", {
+        detail: { text: "Only new message", sender: "New guest" },
+      }),
+    ),
+  );
+  await expect(page.locator(".call-live-comment")).toHaveCount(1);
+  await expect(page.locator(".call-live-comment")).toHaveText(
+    "New guestOnly new message",
+  );
+});
+
 test("native Chromium PiP presents and cleans up a real synthetic MediaStream (not physical-device verification)", async ({
   page,
 }) => {
