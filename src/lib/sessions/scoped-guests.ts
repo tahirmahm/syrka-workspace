@@ -1,3 +1,4 @@
+import { QwenRequestError } from "./qwen";
 import { randomBytes } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { AccessToken } from "livekit-server-sdk";
@@ -195,12 +196,20 @@ export async function guestHandler(request: Request) {
           text: transcript.text,
           language: transcript.language,
         });
-        return response({ ok: true });
-      } catch {
+        return response({
+          ok: true,
+          audio_bytes: audio.size,
+          characters: transcript.text.length,
+          saved_segments: transcript.text.trim() ? 1 : 0,
+          asr: "diagnostics" in transcript ? transcript.diagnostics : undefined,
+        });
+      } catch (error) {
         await access("fail_stt", { request_id: requestId }).catch(() => {});
         throw new GuestError(
           503,
-          "Speech processing could not complete, or consent ended. Calling remains available.",
+          error instanceof QwenRequestError
+            ? error.message
+            : "Speech processing could not complete, or consent ended. Calling remains available.",
         );
       }
     }

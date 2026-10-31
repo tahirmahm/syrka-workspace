@@ -1079,16 +1079,24 @@ async function speechRequest(request: Request, ctx: SessionContext) {
           source_kind: "stt",
         }),
       );
+    const diagnostics =
+      "diagnostics" in transcription ? transcription.diagnostics : undefined;
+    const metrics = {
+      characters: transcription.text.length,
+      audio_bytes: blob.size,
+      saved_segments: transcription.text.trim() ? 1 : 0,
+      asr: diagnostics,
+    };
     check(
       await ctx.db
         .from("session_jobs")
         .update({
           state: "done",
-          output: { characters: transcription.text.length },
+          output: metrics,
         })
         .eq("id", jobId),
     );
-    return json({ ok: true });
+    return json({ ok: true, ...metrics });
   } catch (e) {
     await ctx.db
       .from("session_jobs")

@@ -1,6 +1,11 @@
 /** UI/API fixtures only: these assertions do not verify LiveKit media transport. */
 import { test, expect, type Page } from "@playwright/test";
-import type { Member } from "../../src/lib/sessions/model";
+import type {
+  Member,
+  Segment,
+  Job,
+  SessionNote,
+} from "../../src/lib/sessions/model";
 import { AccessToken } from "livekit-server-sdk";
 const host = "10000000-0000-4000-8000-000000000001",
   guest = "10000000-0000-4000-8000-000000000002",
@@ -57,6 +62,12 @@ async function fixture(page: Page, actor = host, isGuest = false) {
   const jwt = await token.toJwt();
   await page.routeWebSocket("wss://layout.invalid/**", () => {});
   const calls = {
+    consent: false,
+    transcribing: false,
+    segments: [] as Segment[],
+    jobs: [] as Job[],
+    note: null as SessionNote | null,
+    aiReady: false,
     create: 0,
     token: 0,
     request: 0,
@@ -71,6 +82,15 @@ async function fixture(page: Page, actor = host, isGuest = false) {
   await page.route("**/workspace/api/sessions**", async (route) => {
     const input = route.request().postDataJSON();
     if (input) calls.actions.push(input);
+    if (input?.action === "consent") {
+      calls.consent = input.consent;
+      return route.fulfill({ json: { ok: true } });
+    }
+    if (input?.action === "host_update") {
+      if (input.patch.transcribing !== undefined)
+        calls.transcribing = input.patch.transcribing;
+      return route.fulfill({ json: { ok: true } });
+    }
     if (input?.action === "member_update") {
       const member = calls.people.find(
         (member) => member.user_id === input.user_id,
@@ -113,20 +133,20 @@ async function fixture(page: Page, actor = host, isGuest = false) {
       is_guest: isGuest,
       guest_identity: isGuest,
       status: "approved",
-      consent: false,
+      consent: calls.consent,
       can_publish: true,
     };
     return route.fulfill({
       json: {
-        room,
+        room: { ...room, transcribing: calls.transcribing },
         me,
         members: [me, ...calls.people],
-        segments: [],
-        note: null,
-        jobs: [],
+        segments: calls.segments,
+        note: calls.note,
+        jobs: calls.jobs,
         cards: [],
         user_id: actor,
-        capabilities: caps,
+        capabilities: { ...caps, ai: calls.aiReady },
       },
     });
   });
@@ -806,4 +826,143 @@ test("copy invitation uses one compact one-second toast and clipboard errors rem
   await page.clock.fastForward(3000);
   await expect(error).toBeVisible();
   expect(calls.token).toBe(1);
+});
+
+test("Live Transcript exposes explicit consent, enable controls, automatic segments and independent speech errors", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const calls = await fixture(page);
+  calls.aiReady = true;
+  await page.addInitScript(
+    (value) =>
+      localStorage.setItem(
+        "sb-zguejzlseldovdssiumn-auth-token",
+        JSON.stringify(value),
+      ),
+    session(host),
+  );
+  await page.goto(`/workspace/sessions/meeting/${id}?start=1`);
+  await expect(page.locator(".session-call-frame")).toBeVisible();
+  await page.getByLabel("More call options", { exact: true }).click();
+  await page
+    .getByRole("button", { name: "Toggle transcript and notes", exact: true })
+    .click();
+  const panel = page.getByRole("region", {
+    name: "Live transcription",
+    exact: true,
+  });
+  await expect(
+    panel.getByRole("heading", { name: "Live Transcript", exact: true }),
+  ).toBeVisible();
+  await expect(panel.getByRole("status").first()).toHaveText("Off");
+  await expect(
+    panel.getByRole("button", { name: "Enable transcription", exact: true }),
+  ).toBeDisabled();
+  await panel.getByRole("checkbox").click();
+  await expect(panel.getByRole("checkbox")).toBeChecked();
+  await expect(
+    panel.getByRole("button", { name: "Enable transcription", exact: true }),
+  ).toBeEnabled();
+  await panel
+    .getByRole("button", { name: "Enable transcription", exact: true })
+    .click();
+  expect(
+    calls.actions.some((a) => a.action === "consent" && a.consent === true),
+  ).toBe(true);
+  expect(calls.transcribing).toBe(true);
+  calls.jobs = [
+    {
+      id: "20000000-0000-4000-8000-000000000001",
+      room_id: id,
+      kind: "stt",
+      state: "running",
+      error: null,
+      output: null,
+      created_at: new Date().toISOString(),
+    },
+  ];
+  await expect(panel.getByRole("status").first()).toHaveText("Processing", {
+    timeout: 6000,
+  });
+  calls.jobs[0].state = "done";
+  calls.segments = [
+    {
+      id: "20000000-0000-4000-8000-000000000002",
+      room_id: id,
+      speaker_id: host,
+      speaker_name: "Host",
+      start_ms: 0,
+      end_ms: 4000,
+      language: "en",
+      original_text: "Fictional live speech appears without refreshing.",
+      edited_text: null,
+      important: false,
+      created_at: new Date().toISOString(),
+    },
+  ];
+  await expect(
+    panel.getByRole("log", { name: "Live transcript segments" }),
+  ).toContainText("Fictional live speech appears without refreshing.", {
+    timeout: 6000,
+  });
+  await expect(panel.getByRole("log")).toContainText("00:00–00:04");
+  await expect(
+    panel.getByRole("button", {
+      name: "Generate notes from transcript",
+      exact: true,
+    }),
+  ).toBeEnabled();
+  await panel
+    .getByRole("button", {
+      name: "Generate notes from transcript",
+      exact: true,
+    })
+    .click();
+  expect(
+    calls.actions.some((a) => a.action === "process" && a.kind === "notes"),
+  ).toBe(true);
+  calls.note = {
+    room_id: id,
+    ai_generated: true,
+    published: false,
+    updated_at: new Date().toISOString(),
+    body: {
+      overview: [
+        {
+          text: "Fictional saved overview.",
+          segment_ids: [calls.segments[0].id],
+        },
+      ],
+      topics: [],
+      decisions: [],
+      actions: [],
+      concepts: [],
+      questions: [],
+    },
+  };
+  await expect(panel).toContainText("Structured notes are saved.", {
+    timeout: 6000,
+  });
+  await expect(
+    page.getByRole("heading", { name: "Overview", exact: true }),
+  ).toBeVisible();
+  calls.jobs[0].state = "failed";
+  calls.jobs[0].error =
+    "Qwen speech service unavailable. Transcript preserved.";
+  await expect(panel.getByRole("status").first()).toHaveText("Error", {
+    timeout: 6000,
+  });
+  await expect(panel).toContainText("Qwen speech service unavailable");
+  await expect(page.locator(".session-call-frame")).toBeVisible();
+  expect(calls.token).toBe(1);
+  await panel.locator(".speech-consent-details > summary").click();
+  await panel.getByRole("checkbox").click();
+  await expect(panel.getByRole("checkbox")).not.toBeChecked();
+  await expect(panel.getByRole("status").first()).toHaveText("Off");
+  await page.locator(".session-side-panel > summary").click();
+  await expect(page.locator(".session-side-panel")).not.toHaveAttribute(
+    "open",
+    "",
+  );
 });

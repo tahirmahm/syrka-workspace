@@ -23,10 +23,22 @@ export async function transcribeRealtimePcm(blob: Blob, language: string) {
   url.pathname = "/api-ws/v1/realtime";
   url.search = "?model=qwen3-asr-flash-realtime";
   const pcm = Buffer.from(await blob.arrayBuffer());
-  return new Promise<{ text: string; language: string }>((resolve, reject) => {
+  return new Promise<{
+    text: string;
+    language: string;
+    diagnostics: {
+      model: string;
+      transport: string;
+      events: Record<string, number>;
+      signal: boolean;
+    };
+  }>((resolve, reject) => {
     let final = "",
       settled = false,
       phase = "connecting to the speech service";
+    const events: Record<string, number> = {};
+    let providerStatus: number | undefined;
+    const signal = pcm.some((byte) => byte !== 0);
     const ws = new WebSocket(url, {
       headers: { Authorization: `Bearer ${config.key}` },
       handshakeTimeout: 10000,
@@ -47,8 +59,31 @@ export async function transcribeRealtimePcm(blob: Blob, language: string) {
       settled = true;
       clearTimeout(timer);
       ws.terminate();
+      // Metadata only. Never log transcripts, audio, URLs with credentials, headers or provider bodies.
+      console.info("[syrka-asr]", {
+        model: "qwen3-asr-flash-realtime",
+        transport: "outbound-websocket",
+        phase,
+        events,
+        audio_bytes: pcm.length,
+        nonzero_audio: signal,
+        result: error ? "error" : "done",
+        characters: final.length,
+        provider_status: providerStatus,
+        quota: error instanceof QwenRequestError ? error.quota : false,
+      });
       if (error) reject(error);
-      else resolve({ text: final, language });
+      else
+        resolve({
+          text: final,
+          language,
+          diagnostics: {
+            model: "qwen3-asr-flash-realtime",
+            transport: "outbound-websocket",
+            events,
+            signal,
+          },
+        });
     }
     const send = (value: Record<string, unknown>) =>
       ws.send(JSON.stringify({ event_id: randomUUID(), ...value }));
@@ -67,6 +102,7 @@ export async function transcribeRealtimePcm(blob: Blob, language: string) {
       });
     };
     ws.on("unexpected-response", (_, response) => {
+      providerStatus = response.statusCode;
       phase = `checking an HTTP ${response.statusCode || 502} handshake response`;
       let body = "";
       response.on("data", (chunk) => {
@@ -97,6 +133,17 @@ export async function transcribeRealtimePcm(blob: Blob, language: string) {
     ws.on("message", (bytes) => {
       try {
         const event = JSON.parse(bytes.toString());
+        const known = [
+          "session.created",
+          "session.updated",
+          "input_audio_buffer.committed",
+          "conversation.item.input_audio_transcription.completed",
+          "conversation.item.input_audio_transcription.failed",
+          "session.finished",
+          "error",
+        ];
+        const category = known.includes(event.type) ? event.type : "other";
+        events[category] = (events[category] || 0) + 1;
         if (event.type === "session.created") {
           phase = "waiting for session configuration after session creation";
           configureSession();

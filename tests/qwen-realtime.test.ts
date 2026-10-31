@@ -93,3 +93,23 @@ test("item-specific recognition failures stop immediately without a paid fallbac
   ).rejects.toThrow(/free quota.*no paid fallback/i);
   expect(wire.sent).not.toContain("session.finish");
 });
+
+test("provider diagnostics contain event counts and signal metadata, never speech or credentials", async () => {
+  configure();
+  const log = vi.spyOn(console, "info").mockImplementation(() => {});
+  try {
+    const result = await transcribeRealtimePcm(
+      new Blob([new Uint8Array(3200).fill(1)], { type: "audio/pcm" }),
+      "en",
+    );
+    expect(result.diagnostics.transport).toBe("outbound-websocket");
+    expect(result.diagnostics.events["session.finished"]).toBe(1);
+    expect(result.diagnostics.signal).toBe(true);
+    const metadata = JSON.stringify(log.mock.calls);
+    expect(metadata).not.toContain(result.text);
+    expect(metadata).not.toContain("sk-unit-only");
+    expect(metadata).not.toContain("Authorization");
+  } finally {
+    log.mockRestore();
+  }
+});

@@ -1,5 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { SpeechProgress } from "@/lib/sessions/speech-progress";
+import TranscriptStatus from "./transcript-status";
 import CopyToast from "./copy-toast";
 import type { CallPresentation } from "./call-context";
 import { useRouter } from "next/navigation";
@@ -96,6 +98,10 @@ export default function Meeting({
   const [admissionDenied, setAdmissionDenied] = useState(false);
   const [meetingClosed, setMeetingClosed] = useState(false);
   const [speechPaused, setSpeechPaused] = useState(false);
+  const [speechProgress, setSpeechProgress] = useState<SpeechProgress>({
+    state: "off",
+    detail: "Transcription is off.",
+  });
   const [callNotice, setCallNotice] = useState("");
   const [copyNotice, setCopyNotice] = useState(0);
   const [origin, setOrigin] = useState("");
@@ -780,7 +786,10 @@ export default function Meeting({
                       });
                   }}
                   panelOpen={panelOpen}
-                  onTogglePanel={() => setPanelOpen((p) => !p)}
+                  onTogglePanel={() => {
+                    setTab("transcript");
+                    setPanelOpen((p) => !p);
+                  }}
                   onInvite={() => void copyInvite()}
                   guestAccess={!!snapshot.me?.guest_identity}
                   devices={devices}
@@ -795,6 +804,7 @@ export default function Meeting({
                     (snapshot.room as { started_at?: string }).started_at ||
                     snapshot.room.starts_at
                   }
+                  onSpeechProgress={setSpeechProgress}
                   transcribing={
                     snapshot.room.transcribing && consented && !speechPaused
                   }
@@ -867,30 +877,53 @@ export default function Meeting({
                   : "Transcript, notes & host controls"}
               </summary>
               <div className="session-panel-content">
-                {snapshot.me?.status === "approved" && (
-                  <label className="session-consent">
-                    <input
-                      type="checkbox"
-                      checked={snapshot.me.consent}
-                      disabled={busy || !snapshot.capabilities.stt}
-                      onChange={(e) => {
-                        const consent = e.target.checked;
-                        if (!consent) setSpeechPaused(true);
-                        void action({ action: "consent", consent }).then(
-                          (result) => {
-                            if (result && consent) setSpeechPaused(false);
-                          },
-                        );
-                      }}
-                    />
-                    I consent to my microphone being sent to the configured
-                    speech provider and the transcript being processed by the
-                    configured AI provider for notes and revision in this
-                    session. All admitted participants must consent. Revoking
-                    consent stops new chunks; already-transcribed text remains
-                    subject to the retention policy.
-                  </label>
-                )}
+                <TranscriptStatus
+                  snapshot={snapshot}
+                  progress={speechProgress}
+                  host={host}
+                  guest={guest}
+                  busy={busy}
+                  inCall={!!token}
+                  visible={!token || panelOpen}
+                  onToggle={() =>
+                    void action({
+                      action: "host_update",
+                      patch: { transcribing: !snapshot.room.transcribing },
+                    })
+                  }
+                  onNotes={() =>
+                    void action({
+                      action: "process",
+                      kind: "notes",
+                      request_id: crypto.randomUUID(),
+                    }).then(() => setTab("notes"))
+                  }
+                >
+                  {snapshot.me?.status === "approved" && (
+                    <label className="session-consent">
+                      <input
+                        type="checkbox"
+                        checked={snapshot.me.consent}
+                        disabled={busy || !snapshot.capabilities.stt}
+                        onChange={(e) => {
+                          const consent = e.target.checked;
+                          if (!consent) setSpeechPaused(true);
+                          void action({ action: "consent", consent }).then(
+                            (result) => {
+                              if (result && consent) setSpeechPaused(false);
+                            },
+                          );
+                        }}
+                      />
+                      I consent to my microphone being sent to the configured
+                      speech provider and the transcript being processed by the
+                      configured AI provider for notes and revision in this
+                      session. All admitted participants must consent. Revoking
+                      consent stops new chunks; already-transcribed text remains
+                      subject to the retention policy.
+                    </label>
+                  )}
+                </TranscriptStatus>
                 {guest && (
                   <p>
                     Guest access is limited to this meeting. Private transcripts
@@ -1038,7 +1071,7 @@ export default function Meeting({
                         >
                           {
                             {
-                              transcript: "Transcript",
+                              transcript: "Live Transcript",
                               notes: "Notes",
                               study: "Revision",
                               personal: "Personal notes",

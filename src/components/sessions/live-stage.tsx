@@ -49,6 +49,7 @@ import {
 import { capturePcm } from "@/lib/sessions/pcm";
 import type { CallPresentation } from "./call-context";
 import type { CallDevices } from "./device-preview";
+import type { SpeechProgress } from "@/lib/sessions/speech-progress";
 import LiveComments from "./live-comments";
 import PeoplePanel, { type PeopleManagement } from "./people-panel";
 import {
@@ -67,7 +68,9 @@ function SpeechCapture({
   startedAt,
   speechFormat,
   onError,
+  onProgress,
 }: {
+  onProgress?: (progress: SpeechProgress) => void;
   guestAccess?: boolean;
   enabled: boolean;
   source: SessionSource;
@@ -78,16 +81,34 @@ function SpeechCapture({
   speechFormat: "pcm" | "encoded";
 }) {
   const { localParticipant, isMicrophoneEnabled } = useLocalParticipant();
+  const progressRef = useRef(onProgress);
+  progressRef.current = onProgress;
+  const completed = useRef(0);
   const errorRef = useRef(onError);
   errorRef.current = onError;
   useEffect(() => {
-    if (!enabled || !isMicrophoneEnabled) return;
+    if (!enabled || !isMicrophoneEnabled) {
+      progressRef.current?.({
+        state: "off",
+        detail: enabled
+          ? "Unmute your microphone to contribute speech."
+          : "Transcription is off; no new microphone audio is sent.",
+      });
+      return;
+    }
     const track = localParticipant.getTrackPublication(Track.Source.Microphone)
       ?.track?.mediaStreamTrack;
-    if (!track) return;
+    if (!track) {
+      progressRef.current?.({
+        state: "off",
+        detail: "No local microphone track is available.",
+      });
+      return;
+    }
     if (speechFormat === "pcm") {
       let active = true,
-        pending = 0;
+        pending = 0,
+        capturing = false;
       let stop: (() => void) | undefined;
       const controller = new AbortController();
       void capturePcm(
@@ -101,6 +122,13 @@ function SpeechCapture({
             return;
           }
           pending++;
+          progressRef.current?.({
+            state: "processing",
+            detail:
+              "Sending a four-second microphone batch to the server and Qwen.",
+            bytes: blob.size,
+            batches: completed.current,
+          });
           const form = new FormData();
           form.append("roomId", roomId);
           form.append("start_ms", String(start));
@@ -126,6 +154,24 @@ function SpeechCapture({
                 const result = await response.json();
                 throw Error(result.error || "Live speech failed.");
               }
+              const result = await response.json();
+              if (active)
+                progressRef.current?.({
+                  state:
+                    pending > 1
+                      ? "processing"
+                      : capturing
+                        ? "listening"
+                        : "off",
+                  detail: result.characters
+                    ? "Speech recognized and saved. Listening for the next batch."
+                    : "Batch processed; no speech was recognized. Check microphone input and speech language.",
+                  bytes: blob.size,
+                  receivedBytes: result.audio_bytes,
+                  characters: result.characters,
+                  savedSegments: result.saved_segments,
+                  batches: ++completed.current,
+                });
             })
             .catch((e) => {
               if (active)
@@ -136,6 +182,17 @@ function SpeechCapture({
             .finally(() => pending--);
         },
         startedAt,
+        (state, resume) => {
+          capturing = state === "running";
+          if (active)
+            progressRef.current?.({
+              state: capturing ? "listening" : "off",
+              detail: capturing
+                ? "Listening to your microphone. Audio is processed in four-second batches."
+                : "Your browser paused microphone processing. Tap Resume speech processing.",
+              resume: state === "suspended" ? resume : undefined,
+            });
+        },
       )
         .then((cleanup) => {
           if (!active) cleanup();
@@ -197,6 +254,10 @@ function SpeechCapture({
           return;
         }
         pending++;
+        progressRef.current?.({
+          state: "processing",
+          detail: "Sending a microphone batch to the speech service.",
+        });
         const blob = new Blob(chunks, { type: mime });
         const form = new FormData();
         form.append("roomId", roomId);
@@ -223,6 +284,17 @@ function SpeechCapture({
               const data = await response.json();
               throw Error(data.error || "Transcription request failed.");
             }
+            const result = await response.json();
+            if (active)
+              progressRef.current?.({
+                state: "listening",
+                detail: "Batch processed. Listening for speech.",
+                bytes: blob.size,
+                receivedBytes: result.audio_bytes,
+                characters: result.characters,
+                savedSegments: result.saved_segments,
+                batches: ++completed.current,
+              });
           })
           .catch((e) => {
             if (active)
@@ -231,6 +303,11 @@ function SpeechCapture({
           .finally(() => pending--);
       };
       recorder.start();
+      progressRef.current?.({
+        state: "listening",
+        detail:
+          "Listening to your microphone; processing batches may take up to 20 seconds.",
+      });
       timer = setTimeout(() => {
         if (recorder?.state === "recording") recorder.stop();
       }, 20000);
@@ -914,9 +991,7 @@ function CallCanvas({
               onClick={openNotes}
             >
               <PanelRight size={17} />
-              {panelLabel === "Consent"
-                ? "Transcription consent"
-                : "Notes & transcription"}
+              Notes / Transcription
             </button>
             <button
               aria-label="Audio and camera settings"
@@ -1039,6 +1114,7 @@ export default function LiveStage({
   source,
   roomId,
   transcribing,
+  onSpeechProgress,
   startedAt,
   speechFormat = "encoded",
   speechLanguages = ["en", "hi", "ur", "ar", "fr", "de", "zh", "es"],
@@ -1064,6 +1140,7 @@ export default function LiveStage({
   source: SessionSource;
   roomId: string;
   transcribing: boolean;
+  onSpeechProgress?: (progress: SpeechProgress) => void;
   startedAt: string;
   onDisconnect: (reason?: string) => void;
   onInvite: () => void;
@@ -1142,7 +1219,7 @@ export default function LiveStage({
                 </select>
                 <small>
                   {transcribing
-                    ? "Consented microphone transcription is active."
+                    ? "Meeting transcription is enabled. Open Notes / Transcription for actual microphone and processing status."
                     : "Transcription is off. Consent controls are in the notes panel."}
                 </small>
               </label>
@@ -1168,7 +1245,10 @@ export default function LiveStage({
             startedAt={startedAt}
             speechFormat={speechFormat}
             enabled={transcribing}
-            onError={setError}
+            onProgress={onSpeechProgress}
+            onError={(message) =>
+              onSpeechProgress?.({ state: "error", detail: message })
+            }
           />
         </LiveKitRoom>
       </div>

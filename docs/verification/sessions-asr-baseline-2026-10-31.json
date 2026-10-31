@@ -1,0 +1,61 @@
+{
+  "url": "https://syrka-workspace-preview.vercel.app",
+  "checks": [
+    "Runtime configuration AI and PCM ASR ready",
+    "Uninvited second identity cannot read private meeting",
+    "ASR blocked without explicit consent",
+    "Real Qwen ASR speech saved with two authenticated microphone-owner labels",
+    "Private transcript hidden from unshared participant",
+    "Authorized participant retrieves shared transcript",
+    "Actual qwen3.8-flash structured notes generated and saved",
+    "New ASR blocked after consent revocation"
+  ],
+  "physical_participants": false,
+  "audio_source": "fictional synthesized spoken fixture",
+  "media_transport_tested": false,
+  "sha": "048466f0458b33bcef2d28795254d5d669d8fdde",
+  "capabilities": {
+    "video": true,
+    "ai": true,
+    "stt": true,
+    "recording": false,
+    "missing": [],
+    "speechFormat": "pcm",
+    "speechLanguages": [
+      "en",
+      "hi",
+      "ar",
+      "fr",
+      "de",
+      "zh",
+      "es"
+    ]
+  },
+  "batches": [
+    {
+      "http": 200,
+      "bytes": 206720,
+      "acknowledged": true
+    },
+    {
+      "http": 200,
+      "bytes": 206720,
+      "acknowledged": true
+    }
+  ],
+  "transcript": {
+    "segments": 2,
+    "characters": 214,
+    "content_sha256": "38fe6bfb70fe91891be7ba9a5236cb0f54c0efcd83c7e3fda05c9319ee91d621"
+  },
+  "notes": {
+    "overview": 1,
+    "topics": 1,
+    "actions": 2
+  },
+  "status": "PASS",
+  "cleanup": "Own QA meeting removed",
+  "checked_at": "2026-10-31T19:27:54.347Z",
+  "immutable_deployment": "https://syrka-workspace-pzad2d88x-tahirmahmood439wel-gmailcoms-projects.vercel.app",
+  "scope": "Existing Preview before UI changes; two authenticated QA identities, actual provider calls, fictional synthesized audio submitted as PCM. Not a physical two-person LiveKit call."
+}

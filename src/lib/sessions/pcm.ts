@@ -3,6 +3,7 @@ export async function capturePcm(
   track: MediaStreamTrack,
   send: (blob: Blob, start: number, end: number) => void,
   startedAt: string,
+  onState?: (state: AudioContextState, resume: () => void) => void,
 ) {
   const context = new AudioContext({ sampleRate: 16000 });
   try {
@@ -29,13 +30,28 @@ export async function capturePcm(
     source.connect(processor);
     processor.connect(silent);
     silent.connect(context.destination);
-    await context.resume();
+    let stopped = false;
+    const resume = () => {
+      void context.resume().catch(() => {
+        if (!stopped) notify();
+      });
+    };
+    const notify = () => {
+      if (!stopped) onState?.(context.state, resume);
+    };
+    context.onstatechange = notify;
+    notify();
+    // Safari may require a second explicit gesture. Return cleanup even while suspended.
+    resume();
     return () => {
+      if (stopped) return;
+      stopped = true;
+      context.onstatechange = null;
       processor.port.onmessage = null;
       source.disconnect();
       processor.disconnect();
       silent.disconnect();
-      void context.close();
+      if (context.state !== "closed") void context.close().catch(() => {});
     };
   } catch (e) {
     await context.close();
