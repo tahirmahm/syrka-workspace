@@ -517,3 +517,46 @@ test("explicit browser fullscreen exits on minimize without replacing the call (
     .getByRole("button", { name: "Leave meeting", exact: true })
     .click();
 });
+
+test("optional fullscreen exit without a Promise does not crash a minimized call", async ({
+  page,
+}) => {
+  const calls = await fixture(page);
+  await page.addInitScript((value) => {
+    localStorage.setItem(
+      "sb-zguejzlseldovdssiumn-auth-token",
+      JSON.stringify(value),
+    );
+    const state = window as unknown as { __testFullscreen: Element | null };
+    state.__testFullscreen = null;
+    Object.defineProperty(document, "fullscreenElement", {
+      get: () => state.__testFullscreen,
+      configurable: true,
+    });
+    Object.defineProperty(document, "exitFullscreen", {
+      value: () => {
+        state.__testFullscreen = null;
+      },
+      configurable: true,
+    });
+  }, session(host));
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(`/workspace/sessions/meeting/${id}?start=1`);
+  await expect(page.locator(".session-call-frame")).toBeVisible();
+  await page.evaluate(() => {
+    (
+      window as unknown as { __testFullscreen: Element | null }
+    ).__testFullscreen = document.querySelector(".persistent-call");
+  });
+  await page
+    .getByRole("button", { name: "Minimize call", exact: true })
+    .click();
+  await expect(page.locator('[data-persistent-call="mini"]')).toBeVisible();
+  await expect(page.locator("html#__next_error__")).toHaveCount(0);
+  expect(calls.token).toBe(1);
+  expect(errors).toEqual([]);
+  await page
+    .getByRole("button", { name: "Leave meeting", exact: true })
+    .click();
+});

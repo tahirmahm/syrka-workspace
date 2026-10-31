@@ -74,11 +74,21 @@ export default function WorkspaceCallProvider({
     return () => window.removeEventListener("resize", resize);
   }, [clamp]);
   useEffect(() => {
+    const element = surface.current;
+    // A null document.fullscreenElement and a null ref are not an owned fullscreen.
+    // iOS/WebKit can lack the standard API; some implementations return no Promise.
     if (
       (!active || minimized) &&
-      document.fullscreenElement === surface.current
-    )
-      void document.exitFullscreen().catch(() => {});
+      element &&
+      document.fullscreenElement === element &&
+      typeof document.exitFullscreen === "function"
+    ) {
+      try {
+        void Promise.resolve(document.exitFullscreen()).catch(() => {});
+      } catch {
+        /* Optional browser UI must never terminate the Workspace or call. */
+      }
+    }
   }, [active, minimized]);
   const value = useMemo(
     () => ({ register, currentId: meeting?.id, active, restore }),
