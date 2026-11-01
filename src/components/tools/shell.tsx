@@ -13,6 +13,8 @@ import {
   ShieldCheck,
   Video,
   Menu,
+  CalendarDays,
+  ClipboardList,
 } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { Button } from "@/components/ui/button";
@@ -26,7 +28,7 @@ export function ToolsShell({
   children: React.ReactNode;
   title?: string;
   cloudData?: boolean;
-  application?: "tools" | "sessions";
+  application?: "tools" | "sessions" | "calendar" | "forms";
 }) {
   return (
     <div
@@ -76,6 +78,28 @@ export function ToolsShell({
             {name}
           </Link>
         ))}
+        {[
+          {
+            name: "Calendar",
+            href: "/calendar",
+            Icon: CalendarDays,
+            key: "calendar",
+          },
+          { name: "Forms", href: "/forms", Icon: ClipboardList, key: "forms" },
+        ].map(({ name, href, Icon, key }) => (
+          <Link
+            key={key}
+            href={href}
+            className={application === key ? "nav active" : "nav"}
+            aria-current={application === key ? "page" : undefined}
+          >
+            <Icon
+              size={18}
+              color={key === "calendar" ? "#a17145" : "#8b6eaf"}
+            />
+            {name}
+          </Link>
+        ))}
         <Link
           href="/sessions"
           className={application === "sessions" ? "nav active" : "nav"}
@@ -115,8 +139,8 @@ export function ToolsShell({
           <span className="breadcrumb">
             Workspace
             <ChevronRight size={14} />
-            <Link href={application === "sessions" ? "/sessions" : "/tools"}>
-              {application === "sessions" ? "Sessions" : "Tools"}
+            <Link href={`/${application}`}>
+              {application[0].toUpperCase() + application.slice(1)}
             </Link>
             {title && !(application === "sessions" && title === "Sessions") && (
               <>
@@ -129,7 +153,9 @@ export function ToolsShell({
             <ShieldCheck size={15} />
             Private by design
           </span>
-          {application === "sessions" && (
+          {(application === "sessions" ||
+            application === "calendar" ||
+            application === "forms") && (
             <details className="sessions-mobile-menu">
               <summary aria-label="Workspace navigation">
                 <Menu size={20} />
@@ -151,7 +177,18 @@ export function ToolsShell({
                   <Presentation size={18} />
                   Present
                 </Link>
-                <Link href="/sessions" aria-current="page">
+                <Link href="/calendar">
+                  <CalendarDays size={18} />
+                  Calendar
+                </Link>
+                <Link href="/forms">
+                  <ClipboardList size={18} />
+                  Forms
+                </Link>
+                <Link
+                  href="/sessions"
+                  aria-current={application === "sessions" ? "page" : undefined}
+                >
                   <Video size={18} />
                   Sessions
                 </Link>

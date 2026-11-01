@@ -131,3 +131,7 @@ Sessions is a main Workspace application at `/workspace/sessions`, immediately b
 Instant Sessions: **Start call** creates a hosted meeting and opens its real LiveKit connection flow. Account-free guests use short-lived meeting-scoped HttpOnly credentials and host admission; Supabase anonymous signup is not required. Apply the additive scoped-guest migration. See [implementation, local tests and remaining acceptance gates](docs/sessions-instant-guests.md). No verified physical-device or guest media rollout is claimed.
 
 Persistent Sessions calls: the active room lives beneath the root Workspace layout and minimizes during client-side navigation. See [calling surface, PiP/browser limits, permissions and acceptance checklist](docs/sessions-persistent-calls.md). Physical native PiP, background media and shared-screen audio require device acceptance before merging the draft.
+
+## Calendar and Forms feature Preview
+
+The `feature/calendar-forms` branch adds native Calendar and Forms without merging the Sessions draft or changing production. See [feature guide and limitations](docs/native/README.md), [security and scheduled reminders](docs/native/security.md), and [versioned integration contracts](docs/native/contracts.md). Public respondent pages use `/workspace/respond/[token]`. AI is optional and server-only, with no paid fallback. This is a functional initial release; external calendar sync, institutional forms/grades and advanced automation remain explicitly unavailable.
