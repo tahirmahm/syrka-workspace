@@ -60,3 +60,15 @@ export const knowledgeTools = [
       "Search transcripts, review summaries and organize meeting and lecture knowledge.",
   },
 ] as const;
+
+// Native applications launched through Tools keep their canonical routes.
+export const workspaceTools = [
+  {
+    slug: "forms",
+    href: "/forms",
+    name: "Forms",
+    category: "Everyday",
+    description:
+      "Build surveys, collect secure responses and explore real results.",
+  },
+] as const;

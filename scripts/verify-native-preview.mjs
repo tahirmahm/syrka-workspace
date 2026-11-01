@@ -1,0 +1,704 @@
+/** Real-service acceptance. Requires isolated QA actors provisioned by the operator; never logs credentials. */
+import fs from "node:fs/promises";
+import assert from "node:assert/strict";
+import { randomUUID, randomBytes } from "node:crypto";
+import { chromium } from "@playwright/test";
+import ExcelJS from "exceljs";
+const target = process.env.SYRKA_PREVIEW_URL || "http://127.0.0.1:3000",
+  fixture = JSON.parse(
+    await fs.readFile(
+      process.env.SYRKA_QA_ACTORS_FILE || "/tmp/syrka-native-actors.json",
+      "utf8",
+    ),
+  );
+const local = await fs.readFile(".env.local", "utf8");
+const env = Object.fromEntries(
+  local
+    .split("\n")
+    .filter((l) => /^[A-Z_]+=/.test(l))
+    .map((l) => {
+      const i = l.indexOf("=");
+      return [l.slice(0, i), l.slice(i + 1).replace(/^"|"$/g, "")];
+    }),
+);
+const url = env.NEXT_PUBLIC_SUPABASE_URL,
+  key = env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+assert.equal(new URL(url).hostname, "zguejzlseldovdssiumn.supabase.co");
+const report = { target, checks: {}, fixture_ids: {}, ai: {} };
+async function json(endpoint, method = "GET", body, access) {
+  const res = await fetch(endpoint, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...(endpoint.startsWith(url) ? { apikey: key } : {}),
+      ...(access ? { Authorization: "Bearer " + access } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  const value = text ? JSON.parse(text) : null;
+  return { ok: res.ok, status: res.status, value };
+}
+async function db(path, method = "GET", body, actor = 0) {
+  const r = await json(
+    url + "/rest/v1/" + path,
+    method,
+    body,
+    fixture.actors[actor].session.access_token,
+  );
+  assert(
+    r.ok,
+    `Database request failed (${r.status}): ${JSON.stringify(r.value)}`,
+  );
+  return r.value;
+}
+for (const actor of fixture.actors) {
+  const r = await json(url + "/auth/v1/token?grant_type=password", "POST", {
+    email: actor.email,
+    password: actor.password,
+  });
+  assert(r.ok, "QA sign-in failed");
+  actor.session = r.value;
+}
+await fs.writeFile(
+  process.env.SYRKA_QA_ACTORS_FILE || "/tmp/syrka-native-actors.json",
+  JSON.stringify(fixture),
+  { mode: 0o600 },
+);
+const owner = fixture.actors[0],
+  calendarId = randomUUID(),
+  eventId = randomUUID(),
+  formId = randomUUID(),
+  token = randomUUID();
+report.fixture_ids = { calendarId, eventId, formId };
+await fs.writeFile(
+  "/tmp/syrka-native-service-report.json",
+  JSON.stringify(report, null, 2),
+  { mode: 0o600 },
+);
+await db("native_calendars", "POST", {
+  id: calendarId,
+  owner_id: owner.id,
+  name: "QA University " + calendarId.slice(0, 8),
+  colour: "#5379b8",
+  time_zone: "Europe/Prague",
+  is_default: true,
+});
+const due = new Date(Math.ceil(Date.now() / 60000) * 60000 + 60000);
+const data = {
+  id: eventId,
+  calendar_id: calendarId,
+  title: "QA scheduled reminder",
+  description: "Synthetic acceptance event",
+  start_local: due.toISOString().slice(0, 16),
+  end_local: new Date(+due + 3600000).toISOString().slice(0, 16),
+  time_zone: "UTC",
+  all_day: false,
+  location: "",
+  meeting_url: "",
+  attendees: [],
+  category: "class",
+  visibility: "private",
+  recurrence: null,
+  references: [],
+  reminders: [0],
+  dst_policy: "earlier",
+  source: null,
+  revision: 0,
+};
+await db("native_events", "POST", {
+  id: eventId,
+  calendar_id: calendarId,
+  owner_id: owner.id,
+  data,
+  revision: 0,
+});
+let r = await json(
+  target + "/workspace/api/native/calendar",
+  "POST",
+  { id: eventId },
+  owner.session.access_token,
+);
+assert(r.ok, `Reminder seed failed: ${JSON.stringify(r.value)}`);
+report.checks.reminder_seed = r.value;
+const hidden = await db(`native_events?id=eq.${eventId}`, "GET", undefined, 1);
+assert.equal(hidden.length, 0);
+report.checks.calendar_cross_account = "passed";
+await db("native_calendar_shares", "POST", {
+  calendar_id: calendarId,
+  user_id: fixture.actors[1].id,
+  role: "viewer",
+});
+assert.equal(
+  (await db(`native_events?id=eq.${eventId}`, "GET", undefined, 1)).length,
+  0,
+);
+report.checks.shared_private_event_hidden = "passed";
+const q1 = randomUUID(),
+  q2 = randomUUID(),
+  q3 = randomUUID();
+const question = (id, type, title, extra = {}) => ({
+  id,
+  type,
+  title,
+  description: "",
+  required: true,
+  options: ["Student", "Employer"],
+  rows: [],
+  min: null,
+  max: null,
+  show_if: null,
+  points: 0,
+  ...extra,
+});
+let schema = {
+  title: "QA University registration",
+  description: "Synthetic acceptance form. No real applicant data.",
+  questions: [
+    question(q1, "single", "Role"),
+    question(q2, "short", "Study programme", {
+      show_if: { question: q1, operator: "equals", value: "Student" },
+    }),
+    question(q3, "file", "Supporting note"),
+  ],
+  confirmation: "Your QA response was saved.",
+  quiz: false,
+};
+let form = {
+  id: formId,
+  owner_id: owner.id,
+  title: schema.title,
+  draft: schema,
+  revision: 0,
+  status: "draft",
+  public_token: token,
+  access: "public",
+  max_responses: 2,
+  one_per_user: false,
+};
+await db("native_forms", "POST", form);
+r = await json(
+  target + "/workspace/api/native/forms",
+  "POST",
+  { form_id: formId, revision: 0 },
+  owner.session.access_token,
+);
+assert(r.ok, `Publish failed: ${JSON.stringify(r.value)}`);
+const version = r.value.version.id;
+report.checks.publish = "passed";
+r = await json(target + "/workspace/api/native/public?token=" + token);
+assert(r.ok, "Anonymous form load failed");
+assert.equal(r.value.schema.questions[0].correct, undefined);
+report.checks.public_without_account = "passed";
+const identity = {
+  response_id: randomUUID(),
+  receipt: randomBytes(32).toString("hex"),
+};
+const upload = new FormData();
+upload.set(
+  "file",
+  new File(["Synthetic QA attachment."], "qa-note.txt", { type: "text/plain" }),
+);
+upload.set("token", token);
+upload.set("question_id", q3);
+upload.set("answers", JSON.stringify({ [q1]: "Student" }));
+upload.set("response_id", identity.response_id);
+upload.set("receipt", identity.receipt);
+const uploaded = await fetch(target + "/workspace/api/native/upload", {
+  method: "POST",
+  body: upload,
+});
+const attachment = await uploaded.json();
+assert(uploaded.ok, `Upload failed: ${JSON.stringify(attachment)}`);
+report.checks.private_upload = "passed";
+assert.equal((await db("native_attachments?id=eq." + attachment.id)).length, 0);
+report.checks.pending_filename_hidden_from_owner = "passed";
+const submission = {
+  token,
+  version_id: version,
+  ...identity,
+  answers: {
+    [q1]: "Student",
+    [q2]: "Economics / اردو / العربية",
+    [q3]: attachment.id,
+  },
+  website: "",
+};
+r = await json(target + "/workspace/api/native/public", "POST", submission);
+assert(r.ok, `Public response failed: ${JSON.stringify(r.value)}`);
+r = await json(target + "/workspace/api/native/public", "POST", submission);
+assert(r.ok, "Duplicate retry should return same receipt");
+const stored = await db(`native_responses?form_id=eq.${formId}`);
+assert.equal(stored.length, 1);
+assert.equal(stored[0].answers[q2], submission.answers[q2]);
+assert.equal(
+  (await db(`native_responses?form_id=eq.${formId}`, "GET", undefined, 1))
+    .length,
+  0,
+);
+report.checks.public_submission_retry_and_isolation = "passed";
+const fileMetadata = (await db("native_attachments?id=eq." + attachment.id))[0];
+const direct = await fetch(
+  url + "/storage/v1/object/office-form-uploads/" + fileMetadata.object_path,
+  { headers: { apikey: key } },
+);
+assert.equal(direct.ok, false);
+const signed = await json(
+  url +
+    "/storage/v1/object/sign/office-form-uploads/" +
+    fileMetadata.object_path,
+  "POST",
+  { expiresIn: 60 },
+  owner.session.access_token,
+);
+assert(signed.ok, "Owner signed download failed");
+const signedPath = signed.value.signedURL || signed.value.signedUrl;
+const downloadFile = await fetch(
+  signedPath.startsWith("http") ? signedPath : url + "/storage/v1" + signedPath,
+);
+assert(downloadFile.ok, "Signed private file could not be downloaded");
+assert.equal(await downloadFile.text(), "Synthetic QA attachment.");
+report.checks.private_storage_denial_and_owner_signed_download = "passed";
+const stolen = await json(target + "/workspace/api/native/public", "POST", {
+  ...submission,
+  response_id: randomUUID(),
+  receipt: randomBytes(32).toString("hex"),
+});
+assert.equal(stolen.ok, false);
+report.checks.cross_response_attachment_rejected = "passed";
+schema = {
+  ...schema,
+  title: "QA Registration version two",
+  questions: schema.questions.map((q) =>
+    q.id === q2 ? { ...q, title: "Reworded study programme" } : q,
+  ),
+};
+await db("native_forms?id=eq." + formId, "PATCH", {
+  draft: schema,
+  title: schema.title,
+  revision: 1,
+});
+r = await json(
+  target + "/workspace/api/native/forms",
+  "POST",
+  { form_id: formId, revision: 1 },
+  owner.session.access_token,
+);
+assert(r.ok, "Second publish failed");
+assert.notEqual(r.value.version.id, version);
+const old = await db("native_form_versions?id=eq." + version);
+assert.equal(old[0].schema.questions[1].title, "Study programme");
+report.checks.immutable_historical_version = "passed";
+const recovered = await json(
+  target + "/workspace/api/native/public",
+  "POST",
+  submission,
+);
+assert(
+  recovered.ok,
+  "A published-version change must not hide an already-saved submission receipt",
+);
+assert.equal(recovered.value.id, identity.response_id);
+report.checks.receipt_retry_after_republication = "passed";
+const browser = await chromium.launch({
+  executablePath:
+    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || "/usr/bin/chromium",
+  args: ["--no-sandbox"],
+});
+try {
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 1000 },
+    timezoneId: "Europe/Prague",
+  });
+  await context.addInitScript(
+    ({ session }) =>
+      localStorage.setItem(
+        "sb-zguejzlseldovdssiumn-auth-token",
+        JSON.stringify(session),
+      ),
+    { session: owner.session },
+  );
+  const page = await context.newPage();
+  await page.goto(target + "/workspace/forms/" + formId + "/responses");
+  await page
+    .getByRole("combobox", { name: "Response schema version" })
+    .selectOption(version);
+  await page.getByRole("button", { name: "XLSX", exact: true }).waitFor();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "XLSX", exact: true }).click();
+  const download = await downloadPromise;
+  const destination = "/tmp/syrka-native-qa.xlsx";
+  await download.saveAs(destination);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(destination);
+  assert.equal(
+    workbook.worksheets[0].getCell("A2").value,
+    identity.response_id,
+  );
+  report.checks.xlsx_reopened_with_actual_response = "passed";
+  await page.screenshot({
+    path: "docs/native/images/responses-live-desktop.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Copy snapshot to Tables" }).click();
+  await page.waitForURL(/\/workspace\?file=|\/workspace$/);
+  await page.getByText("Import CSV", { exact: true }).waitFor();
+  report.checks.tables_snapshot_opened = "passed";
+  await page.screenshot({
+    path: "docs/native/images/tables-live-snapshot.png",
+    fullPage: true,
+  });
+  const guest = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+  });
+  const gp = await guest.newPage();
+  await gp.goto(target + "/workspace/respond/" + token);
+  await gp.getByRole("radio", { name: "Employer", exact: true }).check();
+  await gp.screenshot({
+    path: "docs/native/images/respond-live-mobile.png",
+    fullPage: true,
+  });
+  report.checks.mobile_public_respondent = "passed";
+  assert.equal(
+    await gp.evaluate(() =>
+      localStorage.getItem("sb-zguejzlseldovdssiumn-auth-token"),
+    ),
+    null,
+  );
+  await gp.getByLabel("Supporting note", { exact: true }).setInputFiles({
+    name: "guest-note.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Second synthetic QA attachment."),
+  });
+  await gp.getByText("Uploaded: guest-note.txt", { exact: false }).waitFor();
+  await gp
+    .getByRole("button", { name: "Submit response", exact: true })
+    .click();
+  await gp
+    .getByRole("heading", { name: "Response received", exact: true })
+    .waitFor();
+  report.checks.account_free_mobile_ui_submission = "passed";
+  await gp.screenshot({
+    path: "docs/native/images/respond-live-mobile-receipt.png",
+    fullPage: true,
+  });
+  await guest.close();
+  const restrictedId = randomUUID(),
+    restrictedToken = randomUUID(),
+    restrictedSchema = {
+      ...schema,
+      title: "QA account-restricted form",
+      questions: [question(randomUUID(), "short", "A private answer")],
+    };
+  await db("native_forms", "POST", {
+    id: restrictedId,
+    owner_id: owner.id,
+    title: restrictedSchema.title,
+    draft: restrictedSchema,
+    revision: 0,
+    status: "draft",
+    public_token: restrictedToken,
+    access: "authenticated",
+    one_per_user: true,
+  });
+  const protectedPublish = await json(
+    target + "/workspace/api/native/forms",
+    "POST",
+    { form_id: restrictedId, revision: 0 },
+    owner.session.access_token,
+  );
+  assert(protectedPublish.ok, "Restricted publication failed");
+  assert.equal(
+    (
+      await json(
+        target + "/workspace/api/native/public?token=" + restrictedToken,
+      )
+    ).status,
+    401,
+  );
+  const protectedSubmission = {
+    token: restrictedToken,
+    version_id: protectedPublish.value.version.id,
+    response_id: randomUUID(),
+    receipt: randomBytes(32).toString("hex"),
+    answers: {
+      [restrictedSchema.questions[0].id]: "Synthetic authenticated response",
+    },
+  };
+  assert(
+    (
+      await json(
+        target + "/workspace/api/native/public",
+        "POST",
+        protectedSubmission,
+        fixture.actors[1].session.access_token,
+      )
+    ).ok,
+  );
+  assert.equal(
+    (
+      await json(
+        target + "/workspace/api/native/public",
+        "POST",
+        {
+          ...protectedSubmission,
+          response_id: randomUUID(),
+          receipt: randomBytes(32).toString("hex"),
+        },
+        fixture.actors[1].session.access_token,
+      )
+    ).ok,
+    false,
+  );
+  await db("native_forms?id=eq." + restrictedId, "PATCH", { status: "closed" });
+  assert.equal(
+    (
+      await json(
+        target + "/workspace/api/native/public?token=" + restrictedToken,
+        "GET",
+        undefined,
+        fixture.actors[1].session.access_token,
+      )
+    ).ok,
+    false,
+  );
+  report.checks.authenticated_eligibility_single_response_and_close = "passed";
+
+  await page.goto(target + "/workspace/calendar");
+  const calendarLabel = "QA University " + calendarId.slice(0, 8);
+  await page
+    .getByRole("button", {
+      name: "Set " + calendarLabel + " as default",
+      exact: true,
+    })
+    .click();
+  const card = page
+    .locator(".native-calendar-label")
+    .filter({
+      has: page.getByRole("checkbox", { name: calendarLabel, exact: true }),
+    });
+  await card.locator("summary").click();
+  await card
+    .getByLabel("Name", { exact: true })
+    .fill("QA renamed " + calendarId.slice(0, 8));
+  await card.getByLabel("Colour", { exact: true }).fill("#8b6eaf");
+  await card
+    .getByRole("button", { name: "Save calendar", exact: true })
+    .click();
+  let changed;
+  for (let attempt = 0; attempt < 15; attempt++) {
+    changed = (await db("native_calendars?id=eq." + calendarId))[0];
+    if (changed.name === "QA renamed " + calendarId.slice(0, 8)) break;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  assert.equal(changed.colour, "#8b6eaf");
+  assert.equal((await db("native_calendars?is_default=eq.true")).length, 1);
+  report.checks.cloud_calendar_rename_colour_and_default = "passed";
+  await page
+    .getByLabel("New calendar name", { exact: true })
+    .fill("QA secondary " + calendarId.slice(0, 8));
+  await page.getByRole("button", { name: "Add calendar", exact: true }).click();
+  const cloudTitle = "QA cloud seminar " + calendarId.slice(0, 8),
+    linkedTitle = "QA linked seminar " + calendarId.slice(0, 8);
+  await page.getByRole("button", { name: "New event", exact: true }).click();
+  const eventDialog = page.getByRole("dialog", { name: "Event editor" });
+  await eventDialog
+    .getByLabel("Title", { exact: true })
+    .fill(cloudTitle);
+  await eventDialog
+    .getByLabel("Start", { exact: true })
+    .fill("2026-11-02T09:00");
+  await eventDialog.getByLabel("End", { exact: true }).fill("2026-11-02T10:00");
+  await eventDialog
+    .getByRole("combobox", { name: "Repeat", exact: true })
+    .selectOption("weekly");
+  await eventDialog.getByLabel("Stop after occurrences (optional)").fill("3");
+  await eventDialog
+    .getByRole("button", { name: "Save event", exact: true })
+    .click();
+  await eventDialog.waitFor({ state: "hidden" });
+  await page
+    .getByRole("button", { name: new RegExp(cloudTitle) })
+    .first()
+    .click();
+  const meeting = await json(
+    target + "/workspace/api/sessions",
+    "POST",
+    {
+      action: "create",
+      data: {
+        title: "QA Calendar linked meeting",
+        description: "Synthetic Calendar integration acceptance",
+        starts_at: "2026-11-02T08:00:00Z",
+        timezone: "Europe/Prague",
+        kind: "meeting",
+        project: "native-calendar-qa",
+        recurrence: "none",
+        occurrences: 1,
+        allow_guests: true,
+      },
+    },
+    owner.session.access_token,
+  );
+  assert(meeting.ok, "Existing Sessions create API failed");
+  const meetingId = meeting.value.rooms[0].id;
+  report.fixture_ids.roomId = meetingId;
+  assert(
+    (
+      await json(
+        target + "/workspace/api/sessions?id=" + meetingId,
+        "GET",
+        undefined,
+        owner.session.access_token,
+      )
+    ).ok,
+  );
+  assert.equal(
+    (
+      await json(
+        target + "/workspace/api/sessions?id=" + meetingId,
+        "GET",
+        undefined,
+        fixture.actors[1].session.access_token,
+      )
+    ).ok,
+    false,
+  );
+  await eventDialog
+    .getByLabel("Title", { exact: true })
+    .fill(linkedTitle);
+  await eventDialog
+    .getByLabel("Existing meeting URL", { exact: true })
+    .fill("/workspace/sessions/meeting/" + meetingId);
+  await eventDialog
+    .getByRole("button", { name: "Save event", exact: true })
+    .click();
+  await eventDialog.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: new RegExp(linkedTitle) }).waitFor();
+  await page
+    .getByRole("button", { name: new RegExp(cloudTitle) })
+    .first()
+    .waitFor();
+  report.checks.cloud_recurrence_exception_and_legitimate_sessions_link =
+    "passed";
+  await page.screenshot({
+    path: "docs/native/images/calendar-live-cloud.png",
+    fullPage: true,
+  });
+  if (process.env.SYRKA_TEST_AI === "true") {
+    await page.goto(target + "/workspace/calendar");
+    await page
+      .getByRole("button", { name: "Plan my time", exact: true })
+      .click();
+    await page
+      .getByLabel("Optional AI request", { exact: true })
+      .fill("Propose one study session tomorrow at 14:00 for one hour.");
+    await page
+      .getByRole("checkbox", { name: /Send this request and my visible/ })
+      .check();
+    const before = (await db("native_events?select=id")).length;
+    await page
+      .getByRole("button", { name: "Propose with Qwen", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Review event", exact: true })
+      .first()
+      .waitFor();
+    assert.equal((await db("native_events?select=id")).length, before);
+    await page
+      .getByRole("button", { name: "Review event", exact: true })
+      .first()
+      .click();
+    await page.getByRole("button", { name: "Save event", exact: true }).click();
+    await page
+      .getByRole("dialog", { name: "Event editor" })
+      .waitFor({ state: "hidden" });
+    assert.equal((await db("native_events?select=id")).length, before + 1);
+    report.checks.qwen_calendar_review_then_approve = "passed";
+    await page.screenshot({
+      path: "docs/native/images/calendar-ai-reviewed.png",
+      fullPage: true,
+    });
+    const published = (await db("native_forms?id=eq." + formId))[0]
+      .current_version;
+    await page.goto(target + "/workspace/forms/" + formId);
+    await page
+      .getByRole("button", { name: "AI draft assistant", exact: true })
+      .click();
+    await page
+      .getByLabel("Form generation request", { exact: true })
+      .fill(
+        "Create exactly two questions for a university registration: full name and email.",
+      );
+    await page
+      .getByRole("checkbox", { name: /Send this request to Qwen in Singapore/ })
+      .check();
+    page.once("dialog", (dialog) => dialog.accept());
+    await page
+      .getByRole("button", { name: "Generate editable draft", exact: true })
+      .click();
+    await page
+      .getByRole("heading", { name: "Draft with Qwen", exact: true })
+      .waitFor({ state: "hidden" });
+    await page.getByText("Saved", { exact: true }).waitFor();
+    await page
+      .getByLabel("Form title", { exact: true })
+      .fill("QA reviewed AI registration");
+    await page.getByText("Saved", { exact: true }).waitFor();
+    let stored;
+    for (let attempt = 0; attempt < 15; attempt++) {
+      stored = (await db("native_forms?id=eq." + formId))[0];
+      if (stored.draft.title === "QA reviewed AI registration") break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    assert.equal(stored.draft.title, "QA reviewed AI registration");
+    assert.equal(stored.current_version, published);
+    report.checks.qwen_form_editable_draft_not_auto_published = "passed";
+    await page.screenshot({
+      path: "docs/native/images/forms-ai-reviewed.png",
+      fullPage: true,
+    });
+  }
+  await context.close();
+} finally {
+  await browser.close();
+}
+if (process.env.SYRKA_TEST_AI === "true") {
+  for (const action of ["calendar", "form"]) {
+    const body =
+      action === "calendar"
+        ? {
+            action,
+            consent: true,
+            prompt:
+              "Propose one free one-hour study session tomorrow at 16:00, and no other events.",
+            date: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+            zone: "Europe/Prague",
+          }
+        : {
+            action,
+            consent: true,
+            prompt:
+              "Create a two-question university event registration form with name and email only.",
+          };
+    const result = await json(
+      target + "/workspace/api/native/ai",
+      "POST",
+      body,
+      owner.session.access_token,
+    );
+    report.ai[action] = {
+      status: result.status,
+      model: result.value.model || null,
+      validated: result.ok,
+      error: result.value.error || null,
+    };
+  }
+}
+report.checks.reminder_due_at = due.toISOString();
+await fs.writeFile(
+  "/tmp/syrka-native-service-report.json",
+  JSON.stringify(report, null, 2),
+  { mode: 0o600 },
+);
+console.log(JSON.stringify(report, null, 2));

@@ -1,12 +1,14 @@
-import { Video, NotebookPen } from "lucide-react";
+import { Video, NotebookPen, ClipboardList } from "lucide-react";
 import type { ToolSlug } from "@/lib/tools/registry";
 export function ToolPictogram({
   name,
   size = 24,
 }: {
-  name: ToolSlug | "tools" | "sessions" | "notes";
+  name: ToolSlug | "tools" | "sessions" | "notes" | "forms";
   size?: number;
 }) {
+  if (name === "forms")
+    return <ClipboardList size={size} strokeWidth={1.65} aria-hidden="true" />;
   if (name === "sessions") return <Video size={size} strokeWidth={1.65} />;
   if (name === "notes") return <NotebookPen size={size} strokeWidth={1.65} />;
   const paths: Record<ToolSlug | "tools", React.ReactNode> = {

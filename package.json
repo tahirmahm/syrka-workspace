@@ -20,6 +20,7 @@
   "dependencies": {
     "@ai-sdk/google": "4.0.108",
     "@ai-sdk/openai-compatible": "3.0.81",
+    "@js-temporal/polyfill": "0.5.1",
     "@livekit/components-react": "2.9.24",
     "@livekit/components-styles": "1.2.0",
     "@radix-ui/react-slot": "1.5.0",
@@ -50,6 +51,7 @@
     "eslint": "9.39.5",
     "eslint-config-next": "16.4.3",
     "exceljs": "4.4.0",
+    "ical.js": "2.2.1",
     "jszip": "3.10.2",
     "livekit-client": "2.23.0",
     "livekit-server-sdk": "2.19.2",

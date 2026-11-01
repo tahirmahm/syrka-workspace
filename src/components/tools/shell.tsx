@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Video,
   Menu,
+  CalendarDays,
 } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,7 @@ export function ToolsShell({
   children: React.ReactNode;
   title?: string;
   cloudData?: boolean;
-  application?: "tools" | "sessions";
+  application?: "tools" | "sessions" | "calendar" | "forms";
 }) {
   return (
     <div
@@ -88,15 +89,34 @@ export function ToolsShell({
           {application === "sessions" && <span className="nav-dot" />}
         </Link>
         <Link
+          href="/calendar"
+          className={application === "calendar" ? "nav active" : "nav"}
+          aria-current={application === "calendar" ? "page" : undefined}
+        >
+          <CalendarDays size={18} color="#a17145" aria-hidden="true" />
+          Calendar
+          {application === "calendar" && <span className="nav-dot" />}
+        </Link>
+        <Link
           href="/tools"
-          className={application === "tools" ? "nav active" : "nav"}
-          aria-current={application === "tools" ? "page" : undefined}
+          className={
+            application === "tools" || application === "forms"
+              ? "nav active"
+              : "nav"
+          }
+          aria-current={
+            application === "tools" || application === "forms"
+              ? "page"
+              : undefined
+          }
         >
           <span style={{ color: "#8b78a0" }}>
             <ToolPictogram name="tools" size={18} />
           </span>
           Tools
-          {application === "tools" && <span className="nav-dot" />}
+          {(application === "tools" || application === "forms") && (
+            <span className="nav-dot" />
+          )}
         </Link>
         <div className="sidebar-bottom">
           <div className="workspace-note">
@@ -115,9 +135,17 @@ export function ToolsShell({
           <span className="breadcrumb">
             Workspace
             <ChevronRight size={14} />
-            <Link href={application === "sessions" ? "/sessions" : "/tools"}>
-              {application === "sessions" ? "Sessions" : "Tools"}
+            <Link href={application === "forms" ? "/tools" : `/${application}`}>
+              {application === "forms"
+                ? "Tools"
+                : application[0].toUpperCase() + application.slice(1)}
             </Link>
+            {application === "forms" && (
+              <>
+                <ChevronRight size={14} />
+                <Link href="/forms">Forms</Link>
+              </>
+            )}
             {title && !(application === "sessions" && title === "Sessions") && (
               <>
                 <ChevronRight size={14} />
@@ -129,7 +157,9 @@ export function ToolsShell({
             <ShieldCheck size={15} />
             Private by design
           </span>
-          {application === "sessions" && (
+          {(application === "sessions" ||
+            application === "calendar" ||
+            application === "forms") && (
             <details className="sessions-mobile-menu">
               <summary aria-label="Workspace navigation">
                 <Menu size={20} />
@@ -151,11 +181,24 @@ export function ToolsShell({
                   <Presentation size={18} />
                   Present
                 </Link>
-                <Link href="/sessions" aria-current="page">
+                <Link
+                  href="/sessions"
+                  aria-current={application === "sessions" ? "page" : undefined}
+                >
                   <Video size={18} />
                   Sessions
                 </Link>
-                <Link href="/tools">
+                <Link
+                  href="/calendar"
+                  aria-current={application === "calendar" ? "page" : undefined}
+                >
+                  <CalendarDays size={18} />
+                  Calendar
+                </Link>
+                <Link
+                  href="/tools"
+                  aria-current={application === "forms" ? "page" : undefined}
+                >
                   <ToolPictogram name="tools" size={18} />
                   Tools
                 </Link>
