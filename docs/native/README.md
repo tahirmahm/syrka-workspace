@@ -19,7 +19,7 @@ Forms do not yet implement organisational ownership/restrictions, invite-only pe
 ## Development and deployment
 
 1. Use the existing repository, install with `npm ci`, and copy `.env.example` to private local configuration. Existing dedicated Supabase URL/publishable key stay unchanged.
-2. Review/apply the four additive `native_*` migrations to the intended **Workspace** project. The hosted target was reviewed and local RLS/crypto tests passed before application; never apply to Campus/Roadmaps.
+2. Review/apply the six additive `native_*` migrations to the intended **Workspace** project. The hosted target was reviewed and local RLS/crypto tests passed before application; never apply to Campus/Roadmaps.
 3. Generate a random 48-byte server signing key, put it in Vercel Preview `SYRKA_NATIVE_SIGNING_KEY` for this branch and provision the matching private `native_private.keys` v1 row through an authorized operator. Never commit it or use a NEXT_PUBLIC name. No service-role key is required by app code.
 4. Existing Workspace general-purpose Qwen secrets remain server-only. Preview integration flags/LiveKit credentials were made inheritable across Preview branches **without changing their values or production targets**, preserving `LIVEKIT_DEVELOPMENT_ONLY=true`. Provider Free Quota Only must remain verified. AI is optional.
 5. Commit/push the feature branch. Vercel Git integration builds the existing `syrka-workspace` project automatically. Use a separate Calendar/Forms Preview alias; preserve `syrka-workspace-preview.vercel.app` for Sessions QA and all production domains.

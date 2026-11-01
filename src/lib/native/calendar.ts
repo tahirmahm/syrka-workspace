@@ -383,3 +383,68 @@ export function freeSlots(
     }
   return out.slice(0, 20);
 }
+/** Clip multi-day intervals to a display day and assign non-overlapping visual lanes. */
+export function timedLayout(items: Occurrence[], day: string, zone: string) {
+  const window = rangeFor(day, "day", zone),
+    from = Date.parse(window.from),
+    to = Date.parse(window.to);
+  const intervals = items
+    .filter(
+      (o) =>
+        !o.event.all_day &&
+        Date.parse(o.start) < to &&
+        Date.parse(o.end) > from,
+    )
+    .map((o) => {
+      const a = Temporal.Instant.from(o.start).toZonedDateTimeISO(zone),
+        b = Temporal.Instant.from(o.end).toZonedDateTimeISO(zone);
+      const start = Date.parse(o.start) < from ? 0 : a.hour * 60 + a.minute,
+        end = Date.parse(o.end) >= to ? 1440 : b.hour * 60 + b.minute;
+      return { key: o.key, start, end: Math.max(start + 15, end) };
+    })
+    .sort((a, b) => a.start - b.start || b.end - a.end);
+  const result: Record<
+    string,
+    { start: number; end: number; lane: number; count: number }
+  > = {};
+  let group: typeof intervals = [],
+    maxEnd = 0;
+  const flush = () => {
+    const ends: number[] = [];
+    const placed = group.map((item) => {
+      let lane = ends.findIndex((end) => end <= item.start);
+      if (lane < 0) lane = ends.length;
+      ends[lane] = item.end;
+      return { ...item, lane };
+    });
+    for (const p of placed) result[p.key] = { ...p, count: ends.length };
+    group = [];
+  };
+  for (const item of intervals) {
+    if (group.length && item.start >= maxEnd) flush();
+    if (!group.length) maxEnd = 0;
+    group.push(item);
+    maxEnd = Math.max(maxEnd, item.end);
+  }
+  flush();
+  return result;
+}
+export function moveDisplayedOccurrence(
+  item: Occurrence,
+  day: string,
+  displayZone: string,
+  hour?: number,
+) {
+  const displayed = Temporal.Instant.from(item.start).toZonedDateTimeISO(
+    displayZone,
+  );
+  const time =
+    hour === undefined
+      ? displayed.toPlainTime().toString({ smallestUnit: "minute" })
+      : String(hour).padStart(2, "0") + ":00";
+  const local = zoned(day + "T" + time, displayZone, item.event.dst_policy)
+    .withTimeZone(item.event.time_zone)
+    .toPlainDateTime()
+    .toString({ smallestUnit: "minute" });
+  return shiftOccurrence(item, local);
+}

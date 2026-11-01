@@ -38,8 +38,9 @@ import {
   rangeFor,
   today,
   conflicts,
-  shiftOccurrence,
+  moveDisplayedOccurrence,
   freeSlots,
+  timedLayout,
   type Calendar,
   type CalendarEvent,
   type CalendarException,
@@ -133,28 +134,34 @@ function CalendarContent({ id: uid, demo }: { id: string; demo: boolean }) {
     return () => clearInterval(timer);
   }, [load]);
   const range = useMemo(() => rangeFor(date, view, zone), [date, view, zone]);
-  const expanded = useMemo(() => {
-    try {
-      return events
-        .filter((e) => !hidden.includes(e.calendar_id))
-        .flatMap((e) => expandEvent(e.data, exceptions, range.from, range.to))
-        .filter(
-          (o) =>
-            !query ||
-            [
-              o.event.title,
-              o.event.description,
-              o.event.location,
-              o.event.category,
-            ]
-              .join(" ")
-              .toLowerCase()
-              .includes(query.toLowerCase()),
-        );
-    } catch {
-      return [];
-    }
+  const expansion = useMemo(() => {
+    const invalid: string[] = [];
+    const items = events
+      .filter((e) => !hidden.includes(e.calendar_id))
+      .flatMap((e) => {
+        try {
+          return expandEvent(e.data, exceptions, range.from, range.to);
+        } catch {
+          invalid.push(e.id);
+          return [];
+        }
+      })
+      .filter(
+        (o) =>
+          !query ||
+          [
+            o.event.title,
+            o.event.description,
+            o.event.location,
+            o.event.category,
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(query.toLowerCase()),
+      );
+    return { items, invalid };
   }, [events, hidden, exceptions, range, query]);
+  const expanded = expansion.items;
   const clashes = conflicts(expanded);
   const conflictKeys = new Set(clashes.flatMap((p) => [p.a, p.b]));
   const act = async (fn: () => Promise<void>) => {
@@ -200,7 +207,11 @@ function CalendarContent({ id: uid, demo }: { id: string; demo: boolean }) {
         ).id,
         title: "New event",
         start_local: `${day}T${String(hour).padStart(2, "0")}:00`,
-        end_local: `${day}T${String(hour + 1).padStart(2, "0")}:00`,
+        end_local: Temporal.PlainDateTime.from(
+          `${day}T${String(hour).padStart(2, "0")}:00`,
+        )
+          .add({ hours: 1 })
+          .toString({ smallestUnit: "minute" }),
         time_zone: zone,
       }),
     );
@@ -274,11 +285,11 @@ function CalendarContent({ id: uid, demo }: { id: string; demo: boolean }) {
       }
     });
   }
-  async function reschedule(o: Occurrence, day: string) {
+  async function reschedule(o: Occurrence, day: string, hour?: number) {
     await act(async () => {
       const changed = {
         ...o.event,
-        ...shiftOccurrence(o, `${day}T${o.start_local.slice(11, 16)}`),
+        ...moveDisplayedOccurrence(o, day, zone, hour),
       };
       if (events.find((e) => e.id === o.event_id)?.data.recurrence)
         await put("native_exceptions", {
@@ -321,13 +332,65 @@ function CalendarContent({ id: uid, demo }: { id: string; demo: boolean }) {
     { length: view === "month" ? 42 : view === "week" ? 7 : 1 },
     (_, i) => Temporal.PlainDate.from(range.start).add({ days: i }).toString(),
   );
-  const eventChip = (o: Occurrence) => (
+  const itemsByDay = Object.fromEntries(
+    days.map((day) => {
+      const w = rangeFor(day, "day", zone);
+      return [
+        day,
+        expanded.filter(
+          (o) =>
+            Date.parse(o.start) < Date.parse(w.to) &&
+            Date.parse(o.end) > Date.parse(w.from),
+        ),
+      ];
+    }),
+  );
+  const allDayRows = Math.max(
+    1,
+    ...days.map((day) => itemsByDay[day].filter((o) => o.event.all_day).length),
+  );
+  const timeBase = 42 + allDayRows * 28;
+  const layouts =
+    view === "week" || view === "day"
+      ? Object.fromEntries(
+          days.map((day) => [day, timedLayout(expanded, day, zone)]),
+        )
+      : {};
+  const eventChip = (o: Occurrence, day?: string) => (
     <button
       key={o.key}
       className={
         "native-event " + (conflictKeys.has(o.key) ? "native-conflict" : "")
       }
       style={{
+        ...(day && (view === "week" || view === "day")
+          ? o.event.all_day
+            ? {
+                position: "absolute" as const,
+                top:
+                  35 +
+                  itemsByDay[day]
+                    .filter((item) => item.event.all_day)
+                    .findIndex((item) => item.key === o.key) *
+                    28,
+                left: 3,
+                right: 3,
+                height: 28,
+              }
+            : {
+                position: "absolute" as const,
+                top: timeBase + ((layouts[day]?.[o.key]?.start || 0) / 60) * 32,
+                left: `calc(${((layouts[day]?.[o.key]?.lane || 0) / (layouts[day]?.[o.key]?.count || 1)) * 100}% + 4px)`,
+                width: `calc(${100 / (layouts[day]?.[o.key]?.count || 1)}% - 8px)`,
+                height: Math.max(
+                  25,
+                  (((layouts[day]?.[o.key]?.end || 0) -
+                    (layouts[day]?.[o.key]?.start || 0)) /
+                    60) *
+                    32,
+                ),
+              }
+          : {}),
         borderLeftColor: calendars.find((c) => c.id === o.event.calendar_id)
           ?.colour,
       }}
@@ -378,6 +441,29 @@ function CalendarContent({ id: uid, demo }: { id: string; demo: boolean }) {
         </button>
       </header>
       <ErrorNotice error={error} clear={() => setError("")} />
+      {expansion.invalid.length > 0 && (
+        <div role="alert" className="native-notice">
+          <span>
+            {expansion.invalid.length} event records could not be displayed.
+            Their original data is retained.
+          </span>
+          <button
+            onClick={() =>
+              saveDownload(
+                "calendar-recovery.json",
+                JSON.stringify(
+                  events.filter((e) => expansion.invalid.includes(e.id)),
+                  null,
+                  2,
+                ),
+                "application/json",
+              )
+            }
+          >
+            Export recovery data
+          </button>
+        </div>
+      )}
       {notice && (
         <div className="native-notice" role="status">
           {notice}
@@ -698,13 +784,36 @@ function CalendarContent({ id: uid, demo }: { id: string; demo: boolean }) {
                     "native-day " + (day === today(zone) ? "is-today" : "")
                   }
                   key={day}
+                  style={
+                    view === "week" || view === "day"
+                      ? { minHeight: timeBase + 768 }
+                      : undefined
+                  }
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={(e) => {
                     e.preventDefault();
                     const o = expanded.find(
                       (o) => o.key === e.dataTransfer.getData("text/plain"),
                     );
-                    if (o) void reschedule(o, day);
+                    if (o) {
+                      const hour =
+                        view === "week" || view === "day"
+                          ? Math.max(
+                              0,
+                              Math.min(
+                                23,
+                                Math.floor(
+                                  (e.clientY -
+                                    e.currentTarget.getBoundingClientRect()
+                                      .top -
+                                    timeBase) /
+                                    32,
+                                ),
+                              ),
+                            )
+                          : undefined;
+                      void reschedule(o, day, hour);
+                    }
                   }}
                 >
                   <button
@@ -720,29 +829,20 @@ function CalendarContent({ id: uid, demo }: { id: string; demo: boolean }) {
                     </span>
                     <strong>{day.slice(-2)}</strong>
                   </button>
-                  {view === "day" && (
-                    <div className="native-hour-grid">
+                  {(view === "day" || view === "week") && (
+                    <div className="native-hour-grid" style={{ top: timeBase }}>
                       {Array.from({ length: 24 }, (_, h) => (
                         <button
                           key={h}
-                          onClick={() => newEvent(day, h === 23 ? 22 : h)}
+                          aria-label={`Create event on ${day} at ${h}:00`}
+                          onClick={() => newEvent(day, h)}
                         >
                           {String(h).padStart(2, "0")}:00
                         </button>
                       ))}
                     </div>
                   )}
-                  {expanded
-                    .filter(
-                      (o) =>
-                        new Intl.DateTimeFormat("en-CA", {
-                          timeZone: zone,
-                          year: "numeric",
-                          month: "2-digit",
-                          day: "2-digit",
-                        }).format(new Date(o.start)) === day,
-                    )
-                    .map(eventChip)}
+                  {itemsByDay[day].map((o) => eventChip(o, day))}
                 </div>
               ))}
             </div>

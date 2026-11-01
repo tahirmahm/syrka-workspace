@@ -5,6 +5,8 @@ import {
   zoned,
   conflicts,
   freeSlots,
+  timedLayout,
+  moveDisplayedOccurrence,
 } from "../src/lib/native/calendar";
 import {
   blankForm,
@@ -227,4 +229,79 @@ test("Sections skip their children and invalid calendar dates cannot be submitte
   expect(() =>
     validateAnswers(f, { [role.id]: "Employer", [date.id]: "2026-02-30" }),
   ).toThrow();
+});
+
+test("ICS end dates preserve western timezones and reject unsupported daily weekday filters", () => {
+  const e = validateEvent({
+    ...base(),
+    time_zone: "America/New_York",
+    start_local: "2026-11-01T09:00",
+    end_local: "2026-11-01T10:00",
+    recurrence: {
+      freq: "daily",
+      interval: 1,
+      weekdays: [],
+      count: null,
+      until: "2026-11-05",
+    },
+  });
+  const text = exportICS(e);
+  expect(importICS(text, cal, "UTC")[0].recurrence?.until).toBe("2026-11-05");
+  expect(
+    importICS(
+      text.replace(/UNTIL=\d+T\d+Z/, "UNTIL=20261105T120000Z"),
+      cal,
+      "UTC",
+    )[0].recurrence?.until,
+  ).toBe("2026-11-04");
+  expect(() =>
+    importICS(text.replace("FREQ=DAILY", "FREQ=DAILY;BYDAY=MO"), cal, "UTC"),
+  ).toThrow("Unsupported");
+});
+test("Rating defaults enforce 1–5 and numeric CSV negatives retain their value", () => {
+  const q = blankQuestion("rating");
+  expect(() =>
+    validateAnswers({ ...blankForm(), questions: [q] }, { [q.id]: 99 }),
+  ).toThrow("range");
+  expect(csv([[-5]])).toBe('\uFEFF"-5"');
+});
+
+test("Week/day layout places overlapping appointments in separate lanes and clips overnight events", () => {
+  const first = expandEvent(
+    { ...base(), recurrence: null },
+    [],
+    "2026-10-18T00:00:00Z",
+    "2026-10-21T00:00:00Z",
+  )[0];
+  const other = {
+    ...first,
+    key: "second",
+    start: "2026-10-19T07:30:00Z",
+    end: "2026-10-19T08:30:00Z",
+  };
+  const map = timedLayout([first, other], "2026-10-19", "Europe/Prague");
+  expect(map[first.key].count).toBe(2);
+  expect(map[first.key].lane).not.toBe(map.second.lane);
+  expect(map[first.key].start).toBe(540);
+  const overnight = {
+    ...first,
+    key: "overnight",
+    start: "2026-10-18T21:00:00Z",
+    end: "2026-10-19T01:00:00Z",
+  };
+  expect(
+    timedLayout([overnight], "2026-10-19", "Europe/Prague").overnight.start,
+  ).toBe(0);
+});
+
+test("Dragging uses the displayed timezone, including across a DST boundary", () => {
+  const item = expandEvent(
+    base(),
+    [],
+    "2026-10-01T00:00:00Z",
+    "2026-11-01T00:00:00Z",
+  )[0];
+  expect(
+    moveDisplayedOccurrence(item, "2026-11-02", "UTC", 10).start_local,
+  ).toBe("2026-11-02T11:00");
 });

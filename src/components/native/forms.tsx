@@ -252,7 +252,9 @@ function FormLibrary({ id: uid }: { id: string; demo: boolean }) {
                 </span>
                 <p>
                   Modified {new Date(f.updated_at).toLocaleDateString()} •{" "}
-                  {counts[f.id] || 0} responses
+                  {counts[f.id] === undefined
+                    ? "Response count unavailable"
+                    : `${counts[f.id]} responses`}
                 </p>
                 <div className="native-row wrap">
                   <Link href={"/forms/" + f.id + "/responses"}>
@@ -1432,6 +1434,43 @@ function Responses({
           automatically.
         </p>
       </section>
+      {subset.length > 0 && (
+        <section className="native-panel native-stack">
+          <h2>Submission trend</h2>
+          <small>
+            Selected version and filter • dates in your browser timezone
+          </small>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Responses</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(
+                subset.reduce<Record<string, number>>((groups, r) => {
+                  const date = new Intl.DateTimeFormat("en-CA", {
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                  }).format(new Date(r.created_at));
+                  groups[date] = (groups[date] || 0) + 1;
+                  return groups;
+                }, {}),
+              )
+                .sort(([a], [b]) => b.localeCompare(a))
+                .slice(0, 30)
+                .map(([day, count]) => (
+                  <tr key={day}>
+                    <td>{day}</td>
+                    <td>{count}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </section>
+      )}
       <div className="native-analytics">
         {schema.questions
           .filter((q) => !["section", "information", "long"].includes(q.type))
@@ -1453,7 +1492,9 @@ function Responses({
             return (
               <section className="native-panel" key={q.id}>
                 <h3>{q.title}</h3>
-                <small>{values.length} answers</small>
+                <small>
+                  {values.length} answers • up to 20 distinct values shown
+                </small>
                 {nums.length > 0 && (
                   <p>
                     Average:{" "}

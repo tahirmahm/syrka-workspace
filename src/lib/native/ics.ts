@@ -188,12 +188,17 @@ export function importICS(
         "This import contains recurrence exceptions. Import without exceptions or add them in Syrka; nothing was imported.",
       );
     const v = new ICAL.Event(c);
+    if (!v.uid)
+      throw Error(
+        "Every imported event must have an iCalendar UID. Nothing was imported.",
+      );
     const r = c.getFirstPropertyValue("rrule") as ICAL.Recur | null;
     const allowed = ["DAILY", "WEEKLY", "MONTHLY"];
     if (
       r &&
       (!allowed.includes(r.freq) ||
         Object.keys(r.parts).some((k) => k !== "BYDAY") ||
+        (r.parts.BYDAY && r.freq !== "WEEKLY") ||
         r.parts.BYDAY?.some(
           (x: string) =>
             !["MO", "TU", "WE", "TH", "FR", "SA", "SU"].includes(x),
@@ -206,6 +211,27 @@ export function importICS(
       c.getFirstProperty("dtstart")?.getParameter("tzid") ||
         v.startDate.zone.tzid,
     );
+    const eventZone =
+      timezone === "floating" ? zone : timezone === "Z" ? "UTC" : timezone;
+    let until: string | null = null;
+    if (r?.until) {
+      if (r.until.isDate) until = r.until.toString();
+      else {
+        const local = r.until.toString().endsWith("Z")
+          ? Temporal.Instant.from(r.until.toString())
+              .toZonedDateTimeISO(eventZone)
+              .toPlainDateTime()
+          : Temporal.PlainDateTime.from(r.until.toString());
+        const baseTime = Temporal.PlainDateTime.from(
+          fmt(v.startDate),
+        ).toPlainTime();
+        until = (
+          Temporal.PlainTime.compare(local.toPlainTime(), baseTime) < 0
+            ? local.toPlainDate().subtract({ days: 1 })
+            : local.toPlainDate()
+        ).toString();
+      }
+    }
     return validateEvent({
       id: crypto.randomUUID(),
       calendar_id: calendarId,
@@ -227,7 +253,7 @@ export function importICS(
             freq: r.freq.toLowerCase(),
             interval: r.interval || 1,
             count: r.count || null,
-            until: r.until?.toString().slice(0, 10) || null,
+            until,
             weekdays: (r.parts.BYDAY || []).map(
               (x: string) =>
                 ["MO", "TU", "WE", "TH", "FR", "SA", "SU"].indexOf(x) + 1,

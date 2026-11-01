@@ -172,6 +172,11 @@ export function validateAnswers(schema: FormSchema, input: unknown): Answers {
       case "rating":
       case "scale":
         a = z.number().finite().parse(v);
+        if (
+          ["rating", "scale"].includes(q.type) &&
+          (a < (q.min ?? 1) || a > (q.max ?? 5))
+        )
+          throw Error(`${q.title}: outside the allowed range.`);
         if ((q.min !== null && a < q.min) || (q.max !== null && a > q.max))
           throw Error(`${q.title}: outside the allowed range.`);
         break;
@@ -343,7 +348,7 @@ export function csv(rows: (string | number | boolean)[][]) {
             const v = String(cell);
             return (
               '"' +
-              (/^[=+@\-\t\r]/.test(v) ? "'" : "") +
+              (typeof cell === "string" && /^[=+@\-\t\r]/.test(v) ? "'" : "") +
               v.replaceAll('"', '""') +
               '"'
             );

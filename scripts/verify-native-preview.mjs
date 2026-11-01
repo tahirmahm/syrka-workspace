@@ -211,6 +211,8 @@ const uploaded = await fetch(target + "/workspace/api/native/upload", {
 const attachment = await uploaded.json();
 assert(uploaded.ok, `Upload failed: ${JSON.stringify(attachment)}`);
 report.checks.private_upload = "passed";
+assert.equal((await db("native_attachments?id=eq." + attachment.id)).length, 0);
+report.checks.pending_filename_hidden_from_owner = "passed";
 const submission = {
   token,
   version_id: version,
@@ -235,6 +237,28 @@ assert.equal(
   0,
 );
 report.checks.public_submission_retry_and_isolation = "passed";
+const fileMetadata = (await db("native_attachments?id=eq." + attachment.id))[0];
+const direct = await fetch(
+  url + "/storage/v1/object/office-form-uploads/" + fileMetadata.object_path,
+  { headers: { apikey: key } },
+);
+assert.equal(direct.ok, false);
+const signed = await json(
+  url +
+    "/storage/v1/object/sign/office-form-uploads/" +
+    fileMetadata.object_path,
+  "POST",
+  { expiresIn: 60 },
+  owner.session.access_token,
+);
+assert(signed.ok, "Owner signed download failed");
+const signedPath = signed.value.signedURL || signed.value.signedUrl;
+const downloadFile = await fetch(
+  signedPath.startsWith("http") ? signedPath : url + "/storage/v1" + signedPath,
+);
+assert(downloadFile.ok, "Signed private file could not be downloaded");
+assert.equal(await downloadFile.text(), "Synthetic QA attachment.");
+report.checks.private_storage_denial_and_owner_signed_download = "passed";
 const stolen = await json(target + "/workspace/api/native/public", "POST", {
   ...submission,
   response_id: randomUUID(),
@@ -265,6 +289,17 @@ assert.notEqual(r.value.version.id, version);
 const old = await db("native_form_versions?id=eq." + version);
 assert.equal(old[0].schema.questions[1].title, "Study programme");
 report.checks.immutable_historical_version = "passed";
+const recovered = await json(
+  target + "/workspace/api/native/public",
+  "POST",
+  submission,
+);
+assert(
+  recovered.ok,
+  "A published-version change must not hide an already-saved submission receipt",
+);
+assert.equal(recovered.value.id, identity.response_id);
+report.checks.receipt_retry_after_republication = "passed";
 const browser = await chromium.launch({
   executablePath:
     process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || "/usr/bin/chromium",
@@ -330,13 +365,11 @@ try {
     ),
     null,
   );
-  await gp
-    .getByLabel("Supporting note", { exact: true })
-    .setInputFiles({
-      name: "guest-note.txt",
-      mimeType: "text/plain",
-      buffer: Buffer.from("Second synthetic QA attachment."),
-    });
+  await gp.getByLabel("Supporting note", { exact: true }).setInputFiles({
+    name: "guest-note.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Second synthetic QA attachment."),
+  });
   await gp.getByText("Uploaded: guest-note.txt", { exact: false }).waitFor();
   await gp
     .getByRole("button", { name: "Submit response", exact: true })
@@ -350,6 +383,157 @@ try {
     fullPage: true,
   });
   await guest.close();
+  const restrictedId = randomUUID(),
+    restrictedToken = randomUUID(),
+    restrictedSchema = {
+      ...schema,
+      title: "QA account-restricted form",
+      questions: [question(randomUUID(), "short", "A private answer")],
+    };
+  await db("native_forms", "POST", {
+    id: restrictedId,
+    owner_id: owner.id,
+    title: restrictedSchema.title,
+    draft: restrictedSchema,
+    revision: 0,
+    status: "draft",
+    public_token: restrictedToken,
+    access: "authenticated",
+    one_per_user: true,
+  });
+  const protectedPublish = await json(
+    target + "/workspace/api/native/forms",
+    "POST",
+    { form_id: restrictedId, revision: 0 },
+    owner.session.access_token,
+  );
+  assert(protectedPublish.ok, "Restricted publication failed");
+  assert.equal(
+    (
+      await json(
+        target + "/workspace/api/native/public?token=" + restrictedToken,
+      )
+    ).status,
+    401,
+  );
+  const protectedSubmission = {
+    token: restrictedToken,
+    version_id: protectedPublish.value.version.id,
+    response_id: randomUUID(),
+    receipt: randomBytes(32).toString("hex"),
+    answers: {
+      [restrictedSchema.questions[0].id]: "Synthetic authenticated response",
+    },
+  };
+  assert(
+    (
+      await json(
+        target + "/workspace/api/native/public",
+        "POST",
+        protectedSubmission,
+        fixture.actors[1].session.access_token,
+      )
+    ).ok,
+  );
+  assert.equal(
+    (
+      await json(
+        target + "/workspace/api/native/public",
+        "POST",
+        {
+          ...protectedSubmission,
+          response_id: randomUUID(),
+          receipt: randomBytes(32).toString("hex"),
+        },
+        fixture.actors[1].session.access_token,
+      )
+    ).ok,
+    false,
+  );
+  await db("native_forms?id=eq." + restrictedId, "PATCH", { status: "closed" });
+  assert.equal(
+    (
+      await json(
+        target + "/workspace/api/native/public?token=" + restrictedToken,
+        "GET",
+        undefined,
+        fixture.actors[1].session.access_token,
+      )
+    ).ok,
+    false,
+  );
+  report.checks.authenticated_eligibility_single_response_and_close = "passed";
+
+  if (process.env.SYRKA_TEST_AI === "true") {
+    await page.goto(target + "/workspace/calendar");
+    await page
+      .getByRole("button", { name: "Plan my time", exact: true })
+      .click();
+    await page
+      .getByLabel("Optional AI request", { exact: true })
+      .fill("Propose one study session tomorrow at 14:00 for one hour.");
+    await page
+      .getByRole("checkbox", { name: /Send this request and my visible/ })
+      .check();
+    const before = (await db("native_events?select=id")).length;
+    await page
+      .getByRole("button", { name: "Propose with Qwen", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Review event", exact: true })
+      .first()
+      .waitFor();
+    assert.equal((await db("native_events?select=id")).length, before);
+    await page
+      .getByRole("button", { name: "Review event", exact: true })
+      .first()
+      .click();
+    await page.getByRole("button", { name: "Save event", exact: true }).click();
+    await page
+      .getByRole("dialog", { name: "Event editor" })
+      .waitFor({ state: "hidden" });
+    assert.equal((await db("native_events?select=id")).length, before + 1);
+    report.checks.qwen_calendar_review_then_approve = "passed";
+    await page.screenshot({
+      path: "docs/native/images/calendar-ai-reviewed.png",
+      fullPage: true,
+    });
+    const published = (await db("native_forms?id=eq." + formId))[0]
+      .current_version;
+    await page.goto(target + "/workspace/forms/" + formId);
+    await page
+      .getByRole("button", { name: "AI draft assistant", exact: true })
+      .click();
+    await page
+      .getByLabel("Form generation request", { exact: true })
+      .fill(
+        "Create exactly two questions for a university registration: full name and email.",
+      );
+    await page
+      .getByRole("checkbox", { name: /Send this request to Qwen in Singapore/ })
+      .check();
+    page.once("dialog", (dialog) => dialog.accept());
+    await page
+      .getByRole("button", { name: "Generate editable draft", exact: true })
+      .click();
+    await page
+      .getByRole("heading", { name: "Draft with Qwen", exact: true })
+      .waitFor({ state: "hidden" });
+    await page.getByText("Saved", { exact: true }).waitFor();
+    await page
+      .getByLabel("Form title", { exact: true })
+      .fill("QA reviewed AI registration");
+    await page.getByText("Saved", { exact: true }).waitFor();
+    assert.equal(
+      (await db("native_forms?id=eq." + formId))[0].current_version,
+      published,
+    );
+    report.checks.qwen_form_editable_draft_not_auto_published = "passed";
+    await page.screenshot({
+      path: "docs/native/images/forms-ai-reviewed.png",
+      fullPage: true,
+    });
+  }
   await context.close();
 } finally {
   await browser.close();
@@ -362,7 +546,7 @@ if (process.env.SYRKA_TEST_AI === "true") {
             action,
             consent: true,
             prompt:
-              "Propose one one-hour study session tomorrow at 14:00, and no other events.",
+              "Propose one free one-hour study session tomorrow at 16:00, and no other events.",
             date: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
             zone: "Europe/Prague",
           }

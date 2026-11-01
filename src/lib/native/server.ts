@@ -87,3 +87,35 @@ export function failure(error: unknown) {
     },
   );
 }
+
+export async function limitedJSON(req: Request, maxBytes = 150000) {
+  const reader = req.body?.getReader();
+  if (!reader) throw Error("A request body is required.");
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.length;
+      if (size > maxBytes) {
+        await reader.cancel();
+        throw Error("The request is too large.");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const joined = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, offset);
+    offset += chunk.length;
+  }
+  try {
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(joined));
+  } catch {
+    throw Error("Send a valid JSON request.");
+  }
+}

@@ -54,6 +54,20 @@ for (const width of [1440, 390]) {
     for (const v of ["week", "day", "agenda", "month"]) {
       await page.getByLabel("Calendar view").selectOption(v);
       await expect(page.locator(".calendar-main")).toBeVisible();
+      if (v === "week" && width === 1440) {
+        await page.locator(".view-week").evaluate((el) => {
+          el.scrollTop = 180;
+        });
+        await page.screenshot({
+          path: "docs/native/images/calendar-week-desktop.png",
+          fullPage: true,
+        });
+      }
+      if (v === "agenda" && width === 390)
+        await page.screenshot({
+          path: "docs/native/images/calendar-agenda-mobile.png",
+          fullPage: true,
+        });
     }
     await page.getByRole("button", { name: "Switch to dark mode" }).click();
     await expect(page.locator("html")).toHaveAttribute(
@@ -134,7 +148,7 @@ for (const width of [1440, 390]) {
 test("Native apps are accessible through Workspace navigation without changing Sessions ordering", async ({
   page,
 }) => {
-  await page.setViewportSize({width:1440,height:900});
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/workspace");
   await page
     .getByRole("button", { name: "Try demo — no account needed" })

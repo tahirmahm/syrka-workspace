@@ -7,6 +7,7 @@ import {
   hash,
   rate,
   sameOrigin,
+  limitedJSON,
 } from "@/lib/native/server";
 import {
   publicSchema,
@@ -51,8 +52,19 @@ export async function POST(req: Request) {
         answers: z.unknown(),
         website: z.string().max(0).default(""),
       })
-      .parse(await req.json());
+      .parse(await limitedJSON(req, 150000));
     await rate(req, "form-submit");
+    const prior = await broker(
+      {
+        op: "receipt",
+        token: body.token,
+        response_id: body.response_id,
+        receipt_hash: hash(body.receipt),
+      },
+      "native_receipt_broker",
+    );
+    if (prior)
+      return Response.json(prior, { headers: { "Cache-Control": "no-store" } });
     const auth = await account(req, false);
     const data = await broker({
       op: "load",

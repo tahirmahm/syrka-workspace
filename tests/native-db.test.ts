@@ -41,6 +41,18 @@ test("Native RLS, immutable schemas, signed admission, atomic limits and reminde
       "utf8",
     ),
   );
+  await db.exec(
+    readFileSync(
+      "supabase/migrations/20261101051905_native_integrity_receipts.sql",
+      "utf8",
+    ),
+  );
+  await db.exec(
+    readFileSync(
+      "supabase/migrations/20261101053256_native_reminder_permissions.sql",
+      "utf8",
+    ),
+  );
   await db.query(
     `insert into native_private.keys values('v1','test-only-signing-key')`,
   );
@@ -48,17 +60,14 @@ test("Native RLS, immutable schemas, signed admission, atomic limits and reminde
     db.exec(
       `reset role;set request.jwt.claim.sub='${id || ""}';set role ${id ? "authenticated" : "anon"};`,
     );
-  const call = async (p: Record<string, unknown>) => {
+  const call = async (p: Record<string, unknown>, rpc = "native_broker") => {
     const payload = JSON.stringify({ ...p, ts: Date.now() / 1000 });
-    return db.query<{ value: unknown }>(
-      "select public.native_broker($1,$2)as value",
-      [
-        payload,
-        createHmac("sha256", "test-only-signing-key")
-          .update(payload)
-          .digest("hex"),
-      ],
-    );
+    return db.query<{ value: unknown }>(`select public.${rpc}($1,$2)as value`, [
+      payload,
+      createHmac("sha256", "test-only-signing-key")
+        .update(payload)
+        .digest("hex"),
+    ]);
   };
   await as(a);
   await db.query(
@@ -66,7 +75,7 @@ test("Native RLS, immutable schemas, signed admission, atomic limits and reminde
     [c, a],
   );
   await db.query(
-    `insert into native_events(id,owner_id,calendar_id,data)values($1,$2,$3,'{"visibility":"calendar"}')`,
+    `insert into native_events(id,owner_id,calendar_id,data)values($1,$2,$3,jsonb_build_object('id',($1::uuid)::text,'calendar_id',($3::uuid)::text,'visibility','calendar'))`,
     [event, a, c],
   );
   const schema = {
@@ -157,6 +166,37 @@ test("Native RLS, immutable schemas, signed admission, atomic limits and reminde
       },
     ],
   });
+  await as(a);
+  await db.query("update native_forms set status='closed'where id=$1", [f]);
+  await as(null);
+  const recovered = await call(
+    {
+      op: "receipt",
+      token,
+      response_id: payload.response_id,
+      receipt_hash: "abc",
+    },
+    "native_receipt_broker",
+  );
+  expect((recovered.rows[0].value as { id: string }).id).toBe(
+    payload.response_id,
+  );
+  expect(
+    (recovered.rows[0].value as { answers?: unknown }).answers,
+  ).toBeUndefined();
+  expect(
+    (
+      await call(
+        {
+          op: "receipt",
+          token,
+          response_id: payload.response_id,
+          receipt_hash: "wrong",
+        },
+        "native_receipt_broker",
+      )
+    ).rows[0].value,
+  ).toBeNull();
   await db.exec("reset role");
   await db.query("select native_private.deliver_reminders()");
   await db.query("select native_private.deliver_reminders()");
@@ -174,5 +214,75 @@ test("Native RLS, immutable schemas, signed admission, atomic limits and reminde
     ),
   ).rejects.toThrow();
   await expect(db.query("select * from native_attachments")).rejects.toThrow();
+  await as(a);
+  await db.query("insert into native_calendar_shares values($1,$2,'editor')", [
+    c,
+    b,
+  ]);
+  await as(b);
+  const sharedEvent = "50000000-0000-4000-8000-000000000002";
+  await db.query(
+    "insert into native_events(id,owner_id,calendar_id,data)values($1,$2,$3,jsonb_build_object('id',($1::uuid)::text,'calendar_id',($3::uuid)::text,'visibility','private'))",
+    [sharedEvent, b, c],
+  );
+  await as(null);
+  await call({
+    op: "reminder_seed",
+    event_id: sharedEvent,
+    user_id: b,
+    jobs: [
+      {
+        occurrence: "2026-11-01T10:00",
+        due_at: "2026-01-01T00:00:00Z",
+        title: "Private shared event",
+      },
+    ],
+  });
+  await as(a);
+  await db.query(
+    "delete from native_calendar_shares where calendar_id=$1 and user_id=$2",
+    [c, b],
+  );
+  await as(null);
+  await call({
+    op: "reminder_seed",
+    event_id: sharedEvent,
+    user_id: b,
+    jobs: [
+      {
+        occurrence: "2026-11-01T10:00",
+        due_at: "2026-01-01T00:00:00Z",
+        title: "Must never leak after revocation",
+      },
+    ],
+  });
+  await db.exec("reset role");
+  await db.query("select native_private.deliver_reminders()");
+  await as(b);
+  expect(
+    (await db.query("select * from native_notifications")).rows,
+  ).toHaveLength(0);
+  await db.exec("reset role");
+  const pending = "70000000-0000-4000-8000-000000000001";
+  await db.query(
+    "insert into native_attachments(id,form_id,version_id,response_id,question_id,object_path,filename,mime,bytes,receipt_hash,upload_expires,created_at)values($1,$2,$3,gen_random_uuid(),gen_random_uuid(),'unpredictable-qa-orphan.txt','qa.txt','text/plain',5,'qa',now()+interval '1 hour',now()-interval '2 days')",
+    [pending, f, version],
+  );
+  await as(null);
+  await db.query(
+    "insert into storage.objects(bucket_id,name)values('office-form-uploads','unpredictable-qa-orphan.txt')",
+  );
+  const garbage = await call({ op: "garbage" }, "native_attachment_broker");
+  expect(garbage.rows[0].value).toEqual(["unpredictable-qa-orphan.txt"]);
+  await db.query(
+    "delete from storage.objects where name='unpredictable-qa-orphan.txt'",
+  );
+  await call(
+    { op: "cleaned", paths: ["unpredictable-qa-orphan.txt"] },
+    "native_attachment_broker",
+  );
+  expect(
+    (await call({ op: "garbage" }, "native_attachment_broker")).rows[0].value,
+  ).toEqual([]);
   await db.close();
 }, 30000);
