@@ -498,11 +498,13 @@ try {
     .getByLabel("New calendar name", { exact: true })
     .fill("QA secondary " + calendarId.slice(0, 8));
   await page.getByRole("button", { name: "Add calendar", exact: true }).click();
+  const cloudTitle = "QA cloud seminar " + calendarId.slice(0, 8),
+    linkedTitle = "QA linked seminar " + calendarId.slice(0, 8);
   await page.getByRole("button", { name: "New event", exact: true }).click();
   const eventDialog = page.getByRole("dialog", { name: "Event editor" });
   await eventDialog
     .getByLabel("Title", { exact: true })
-    .fill("QA cloud seminar");
+    .fill(cloudTitle);
   await eventDialog
     .getByLabel("Start", { exact: true })
     .fill("2026-11-02T09:00");
@@ -516,7 +518,7 @@ try {
     .click();
   await eventDialog.waitFor({ state: "hidden" });
   await page
-    .getByRole("button", { name: /QA cloud seminar/ })
+    .getByRole("button", { name: new RegExp(cloudTitle) })
     .first()
     .click();
   const meeting = await json(
@@ -564,7 +566,7 @@ try {
   );
   await eventDialog
     .getByLabel("Title", { exact: true })
-    .fill("QA linked seminar");
+    .fill(linkedTitle);
   await eventDialog
     .getByLabel("Existing meeting URL", { exact: true })
     .fill("/workspace/sessions/meeting/" + meetingId);
@@ -572,9 +574,9 @@ try {
     .getByRole("button", { name: "Save event", exact: true })
     .click();
   await eventDialog.waitFor({ state: "hidden" });
-  await page.getByRole("button", { name: /QA linked seminar/ }).waitFor();
+  await page.getByRole("button", { name: new RegExp(linkedTitle) }).waitFor();
   await page
-    .getByRole("button", { name: /QA cloud seminar/ })
+    .getByRole("button", { name: new RegExp(cloudTitle) })
     .first()
     .waitFor();
   report.checks.cloud_recurrence_exception_and_legitimate_sessions_link =

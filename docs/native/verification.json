@@ -1,0 +1,61 @@
+{
+  "source_commit": "9899bf0af3e5899257daf62c31f51f5b7e7c4493",
+  "target": "https://syrka-workspace-qg8dlfl0u-tahirmahmood439wel-gmailcoms-projects.vercel.app",
+  "checks": {
+    "reminder_seed": {
+      "scheduled": 1,
+      "through": "2027-01-30T08:43:41.325Z",
+      "message": "1 in-app reminders scheduled for the next 90 days."
+    },
+    "calendar_cross_account": "passed",
+    "shared_private_event_hidden": "passed",
+    "publish": "passed",
+    "public_without_account": "passed",
+    "private_upload": "passed",
+    "pending_filename_hidden_from_owner": "passed",
+    "public_submission_retry_and_isolation": "passed",
+    "private_storage_denial_and_owner_signed_download": "passed",
+    "cross_response_attachment_rejected": "passed",
+    "immutable_historical_version": "passed",
+    "receipt_retry_after_republication": "passed",
+    "xlsx_reopened_with_actual_response": "passed",
+    "tables_snapshot_opened": "passed",
+    "mobile_public_respondent": "passed",
+    "account_free_mobile_ui_submission": "passed",
+    "authenticated_eligibility_single_response_and_close": "passed",
+    "cloud_calendar_rename_colour_and_default": "passed",
+    "cloud_recurrence_exception_and_legitimate_sessions_link": "passed",
+    "qwen_calendar_review_then_approve": "passed",
+    "qwen_form_editable_draft_not_auto_published": "passed",
+    "reminder_due_at": "2026-11-01T08:45:00.000Z"
+  },
+  "ai": {
+    "calendar": {
+      "status": 200,
+      "model": "qwen3.8-flash",
+      "validated": true,
+      "error": null
+    },
+    "form": {
+      "status": 200,
+      "model": "qwen3.8-flash",
+      "validated": true,
+      "error": null
+    }
+  },
+  "browser_contexts": "Chromium; separate authenticated owner and account-free 390px respondent; physical devices not tested",
+  "worker": {
+    "refill_http_status": 200,
+    "processed": 10,
+    "failed": 0,
+    "cleanup_http_status": 200,
+    "cleanup_objects_deleted": 14,
+    "remaining_qa_objects": 0,
+    "remaining_garbage": 0
+  },
+  "qa_cleanup": {
+    "sessions_revoked": 2,
+    "users_remaining": 0,
+    "owned_records_removed": true
+  }
+}
