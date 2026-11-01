@@ -40,6 +40,7 @@ export async function POST(req: Request) {
       .filter((j) => j.due_at >= from);
     await broker({
       op: "reminder_seed",
+      revision: data.revision,
       user_id: auth.user.id,
       event_id: id,
       jobs,
@@ -47,7 +48,9 @@ export async function POST(req: Request) {
     return Response.json({
       scheduled: jobs.length,
       through: to,
-      message: "In-app reminders scheduled for the next 90 days.",
+      message: jobs.length
+        ? `${jobs.length} in-app reminders scheduled for the next 90 days.`
+        : "Event saved. No reminders fall within the next 90 days.",
     });
   } catch (e) {
     return failure(e);

@@ -49,6 +49,7 @@ export async function POST(req: Request) {
           .filter((j) => j.due_at >= from);
         await broker({
           op: "reminder_seed",
+          revision: row.revision,
           user_id: row.owner_id,
           event_id: row.id,
           jobs,

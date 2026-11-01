@@ -79,7 +79,7 @@ await fs.writeFile(
 await db("native_calendars", "POST", {
   id: calendarId,
   owner_id: owner.id,
-  name: "QA University",
+  name: "QA University " + calendarId.slice(0, 8),
   colour: "#5379b8",
   time_zone: "Europe/Prague",
   is_default: true,
@@ -464,6 +464,125 @@ try {
   );
   report.checks.authenticated_eligibility_single_response_and_close = "passed";
 
+  await page.goto(target + "/workspace/calendar");
+  const calendarLabel = "QA University " + calendarId.slice(0, 8);
+  await page
+    .getByRole("button", {
+      name: "Set " + calendarLabel + " as default",
+      exact: true,
+    })
+    .click();
+  const card = page
+    .locator(".native-calendar-label")
+    .filter({
+      has: page.getByRole("checkbox", { name: calendarLabel, exact: true }),
+    });
+  await card.locator("summary").click();
+  await card
+    .getByLabel("Name", { exact: true })
+    .fill("QA renamed " + calendarId.slice(0, 8));
+  await card.getByLabel("Colour", { exact: true }).fill("#8b6eaf");
+  await card
+    .getByRole("button", { name: "Save calendar", exact: true })
+    .click();
+  let changed;
+  for (let attempt = 0; attempt < 15; attempt++) {
+    changed = (await db("native_calendars?id=eq." + calendarId))[0];
+    if (changed.name === "QA renamed " + calendarId.slice(0, 8)) break;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  assert.equal(changed.colour, "#8b6eaf");
+  assert.equal((await db("native_calendars?is_default=eq.true")).length, 1);
+  report.checks.cloud_calendar_rename_colour_and_default = "passed";
+  await page
+    .getByLabel("New calendar name", { exact: true })
+    .fill("QA secondary " + calendarId.slice(0, 8));
+  await page.getByRole("button", { name: "Add calendar", exact: true }).click();
+  await page.getByRole("button", { name: "New event", exact: true }).click();
+  const eventDialog = page.getByRole("dialog", { name: "Event editor" });
+  await eventDialog
+    .getByLabel("Title", { exact: true })
+    .fill("QA cloud seminar");
+  await eventDialog
+    .getByLabel("Start", { exact: true })
+    .fill("2026-11-02T09:00");
+  await eventDialog.getByLabel("End", { exact: true }).fill("2026-11-02T10:00");
+  await eventDialog
+    .getByRole("combobox", { name: "Repeat", exact: true })
+    .selectOption("weekly");
+  await eventDialog.getByLabel("Stop after occurrences (optional)").fill("3");
+  await eventDialog
+    .getByRole("button", { name: "Save event", exact: true })
+    .click();
+  await eventDialog.waitFor({ state: "hidden" });
+  await page
+    .getByRole("button", { name: /QA cloud seminar/ })
+    .first()
+    .click();
+  const meeting = await json(
+    target + "/workspace/api/sessions",
+    "POST",
+    {
+      action: "create",
+      data: {
+        title: "QA Calendar linked meeting",
+        description: "Synthetic Calendar integration acceptance",
+        starts_at: "2026-11-02T08:00:00Z",
+        timezone: "Europe/Prague",
+        kind: "meeting",
+        project: "native-calendar-qa",
+        recurrence: "none",
+        occurrences: 1,
+        allow_guests: true,
+      },
+    },
+    owner.session.access_token,
+  );
+  assert(meeting.ok, "Existing Sessions create API failed");
+  const meetingId = meeting.value.rooms[0].id;
+  report.fixture_ids.roomId = meetingId;
+  assert(
+    (
+      await json(
+        target + "/workspace/api/sessions?id=" + meetingId,
+        "GET",
+        undefined,
+        owner.session.access_token,
+      )
+    ).ok,
+  );
+  assert.equal(
+    (
+      await json(
+        target + "/workspace/api/sessions?id=" + meetingId,
+        "GET",
+        undefined,
+        fixture.actors[1].session.access_token,
+      )
+    ).ok,
+    false,
+  );
+  await eventDialog
+    .getByLabel("Title", { exact: true })
+    .fill("QA linked seminar");
+  await eventDialog
+    .getByLabel("Existing meeting URL", { exact: true })
+    .fill("/workspace/sessions/meeting/" + meetingId);
+  await eventDialog
+    .getByRole("button", { name: "Save event", exact: true })
+    .click();
+  await eventDialog.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: /QA linked seminar/ }).waitFor();
+  await page
+    .getByRole("button", { name: /QA cloud seminar/ })
+    .first()
+    .waitFor();
+  report.checks.cloud_recurrence_exception_and_legitimate_sessions_link =
+    "passed";
+  await page.screenshot({
+    path: "docs/native/images/calendar-live-cloud.png",
+    fullPage: true,
+  });
   if (process.env.SYRKA_TEST_AI === "true") {
     await page.goto(target + "/workspace/calendar");
     await page
@@ -524,10 +643,14 @@ try {
       .getByLabel("Form title", { exact: true })
       .fill("QA reviewed AI registration");
     await page.getByText("Saved", { exact: true }).waitFor();
-    assert.equal(
-      (await db("native_forms?id=eq." + formId))[0].current_version,
-      published,
-    );
+    let stored;
+    for (let attempt = 0; attempt < 15; attempt++) {
+      stored = (await db("native_forms?id=eq." + formId))[0];
+      if (stored.draft.title === "QA reviewed AI registration") break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    assert.equal(stored.draft.title, "QA reviewed AI registration");
+    assert.equal(stored.current_version, published);
     report.checks.qwen_form_editable_draft_not_auto_published = "passed";
     await page.screenshot({
       path: "docs/native/images/forms-ai-reviewed.png",

@@ -24,17 +24,20 @@ export async function rows<T>(table: string): Promise<T[]> {
   if (!supabase) throw Error("Cloud configuration is unavailable.");
   const all: T[] = [];
   for (let offset = 0; offset < 50000; offset += 500) {
-    const { data, error } = await supabase
-      .from(table)
-      .select("*")
-      .order(
-        table === "native_exceptions"
-          ? "event_id"
-          : table === "native_calendar_shares"
-            ? "calendar_id"
-            : "id",
-      )
-      .range(offset, offset + 499);
+    const query =
+      table === "native_exceptions"
+        ? supabase.rpc("native_calendar_exceptions").select("*")
+        : supabase.from(table).select("*");
+    const ordered = query.order(
+      table === "native_exceptions"
+        ? "event_id"
+        : table === "native_calendar_shares"
+          ? "calendar_id"
+          : "id",
+    );
+    const { data, error } = await (
+      table === "native_exceptions" ? ordered.order("original_start") : ordered
+    ).range(offset, offset + 499);
     if (error) throw Error(error.message);
     all.push(...(data as T[]));
     if (data.length < 500) return all;
@@ -48,6 +51,12 @@ export async function put(
   record: Record<string, unknown>,
   revision?: number,
 ) {
+  if (table === "native_calendars")
+    record = Object.fromEntries(
+      Object.entries(record).filter(
+        ([key]) => !["role", "archived"].includes(key),
+      ),
+    );
   if (isDemoMode()) {
     const all = await rows<Record<string, unknown>>(table);
     const index = all.findIndex((r) =>

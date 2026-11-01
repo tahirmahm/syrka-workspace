@@ -2,6 +2,7 @@ import { describe, test, expect } from "vitest";
 import {
   validateEvent,
   expandEvent,
+  expandInView,
   zoned,
   conflicts,
   freeSlots,
@@ -304,4 +305,71 @@ test("Dragging uses the displayed timezone, including across a DST boundary", ()
   expect(
     moveDisplayedOccurrence(item, "2026-11-02", "UTC", 10).start_local,
   ).toBe("2026-11-02T11:00");
+});
+
+test("CSRF accepts the incoming reverse-proxy origin and rejects foreign origins", async () => {
+  const { sameOrigin } = await import("../src/lib/native/origin");
+  expect(() =>
+    sameOrigin(
+      new Request("http://localhost:3000/workspace/api/native/public", {
+        headers: { Host: "127.0.0.1:3000", Origin: "http://127.0.0.1:3000" },
+      }),
+    ),
+  ).not.toThrow();
+  expect(() =>
+    sameOrigin(
+      new Request("http://localhost/workspace/api/native/public", {
+        headers: {
+          Host: "syrka-calendar-forms-preview.vercel.app",
+          "x-forwarded-proto": "https",
+          Origin: "https://syrka-calendar-forms-preview.vercel.app",
+        },
+      }),
+    ),
+  ).not.toThrow();
+  expect(() =>
+    sameOrigin(
+      new Request("https://syrka.co/workspace/api/native/public", {
+        headers: { Host: "syrka.co", Origin: "https://attacker.invalid" },
+      }),
+    ),
+  ).toThrow("Cross-origin");
+  expect(() =>
+    sameOrigin(
+      new Request("https://syrka.co/workspace/api/native/public", {
+        headers: { Host: "syrka.co", "sec-fetch-site": "cross-site" },
+      }),
+    ),
+  ).toThrow();
+});
+
+test("All-day ICS exports use an exclusive next-day end, including legacy timed models", () => {
+  const e = { ...base(), all_day: true, recurrence: null };
+  const calendar = new ICAL.Component(ICAL.parse(exportICS(e)));
+  const event = calendar.getFirstSubcomponent("vevent")!;
+  expect(String(event.getFirstPropertyValue("dtstart"))).toBe("2026-10-19");
+  expect(String(event.getFirstPropertyValue("dtend"))).toBe("2026-10-20");
+});
+
+test("All-day values remain on their original dates across extreme display timezones", () => {
+  const e = validateEvent({
+    ...base(),
+    start_local: "2026-11-02T00:00",
+    end_local: "2026-11-03T00:00",
+    all_day: true,
+    time_zone: "Pacific/Kiritimati",
+    recurrence: null,
+  });
+  const items = expandInView(
+    e,
+    [],
+    "2026-11-02",
+    "2026-11-03",
+    "Pacific/Pago_Pago",
+  );
+  expect(items).toHaveLength(1);
+  expect(items[0].start).toBe("2026-11-02T11:00:00Z");
+  expect(
+    expandInView(e, [], "2026-11-03", "2026-11-04", "Pacific/Pago_Pago"),
+  ).toHaveLength(0);
 });

@@ -63,13 +63,7 @@ export function hash(value: string) {
 export async function rate(req: Request, scope: string) {
   await broker({ op: "rate", key: hash(scope + fingerprint(req)) });
 }
-export function sameOrigin(req: Request) {
-  const origin = req.headers.get("origin");
-  if (origin && origin !== new URL(req.url).origin)
-    throw Error("Cross-origin requests are not allowed.");
-  if (req.headers.get("sec-fetch-site") === "cross-site")
-    throw Error("Open the form directly to submit.");
-}
+export { sameOrigin } from "./origin";
 export function failure(error: unknown) {
   const message =
     error instanceof Error

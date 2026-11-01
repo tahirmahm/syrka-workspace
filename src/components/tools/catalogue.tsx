@@ -2,12 +2,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Search, ArrowUpRight } from "lucide-react";
-import { tools, knowledgeTools } from "@/lib/tools/registry";
+import { tools, knowledgeTools, workspaceTools } from "@/lib/tools/registry";
 import { ToolPictogram } from "./pictogram";
 export default function Catalogue() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All tools");
-  const shown = [...tools, ...knowledgeTools].filter(
+  const shown = [...tools, ...knowledgeTools, ...workspaceTools].filter(
     (t) =>
       (category === "All tools" || category === t.category) &&
       `${t.name} ${t.description}`.toLowerCase().includes(query.toLowerCase()),
@@ -46,7 +46,7 @@ export default function Catalogue() {
       <div className="tools-grid">
         {shown.map((tool) => (
           <Link
-            href={`/tools/${tool.slug}`}
+            href={"href" in tool ? tool.href : `/tools/${tool.slug}`}
             className={`tool-card category-${tool.category.toLowerCase()}`}
             key={tool.slug}
           >
@@ -69,9 +69,9 @@ export default function Catalogue() {
         </div>
       )}
       <p className="tools-local-note">
-        PDF, image and everyday utilities run locally without an account.
-        Notes use private account-based records; AI
-        requires configured services and consent.
+        PDF, image and everyday utilities run locally without an account. Forms
+        and Notes use private account-based records; AI requires configured
+        services and consent.
       </p>
     </>
   );

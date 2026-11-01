@@ -98,7 +98,7 @@ export function exportICS(
     if (item.all_day) {
       lines.push(
         `DTSTART;VALUE=DATE:${stamp(item.start_local).slice(0, 8)}`,
-        `DTEND;VALUE=DATE:${stamp(item.end_local).slice(0, 8)}`,
+        `DTEND;VALUE=DATE:${(item.end_local.slice(0, 10) > item.start_local.slice(0, 10) ? item.end_local.slice(0, 10) : Temporal.PlainDate.from(item.start_local.slice(0, 10)).add({ days: 1 }).toString()).replaceAll("-", "")}`,
       );
     } else
       lines.push(

@@ -435,6 +435,7 @@ export function moveDisplayedOccurrence(
   displayZone: string,
   hour?: number,
 ) {
+  if (item.event.all_day) return shiftOccurrence(item, day + "T00:00");
   const displayed = Temporal.Instant.from(item.start).toZonedDateTimeISO(
     displayZone,
   );
@@ -447,4 +448,44 @@ export function moveDisplayedOccurrence(
     .toPlainDateTime()
     .toString({ smallestUnit: "minute" });
   return shiftOccurrence(item, local);
+}
+/** RFC DATE/all-day values stay on their named dates across display timezones. */
+export function expandInView(
+  event: CalendarEvent,
+  exceptions: CalendarException[],
+  startDate: string,
+  endDate: string,
+  displayZone: string,
+) {
+  const from = Temporal.PlainDate.from(startDate)
+      .toZonedDateTime(displayZone)
+      .toInstant(),
+    to = Temporal.PlainDate.from(endDate)
+      .toZonedDateTime(displayZone)
+      .toInstant();
+  return expandEvent(
+    event,
+    exceptions,
+    from.subtract({ hours: 48 }).toString(),
+    to.add({ hours: 48 }).toString(),
+  )
+    .map((o) => {
+      if (!o.event.all_day) return o;
+      const a = Temporal.PlainDate.from(o.start_local.slice(0, 10)),
+        rawEnd = Temporal.PlainDate.from(o.end_local.slice(0, 10)),
+        b =
+          Temporal.PlainDate.compare(rawEnd, a) > 0
+            ? rawEnd
+            : a.add({ days: 1 });
+      return {
+        ...o,
+        start: a.toZonedDateTime(displayZone).toInstant().toString(),
+        end: b.toZonedDateTime(displayZone).toInstant().toString(),
+      };
+    })
+    .filter(
+      (o) =>
+        Date.parse(o.end) > from.epochMilliseconds &&
+        Date.parse(o.start) < to.epochMilliseconds,
+    );
 }

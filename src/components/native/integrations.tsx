@@ -6,6 +6,7 @@ import {
   type CalendarAction,
 } from "@/lib/native/contracts";
 import { validateEvent, type Calendar } from "@/lib/native/calendar";
+import { supabase } from "@/lib/storage";
 import { rows, put, nativeRequest } from "@/lib/native/client";
 type Proposal = {
   id: string;
@@ -152,13 +153,40 @@ export function IntegrationInbox({
                           authoritative: false,
                         },
                       });
-                      await put("native_events", {
+                      const record = {
                         id: event.id,
                         owner_id: uid,
                         calendar_id: selected,
                         data: event,
                         revision: 0,
-                      });
+                      };
+                      if (demo) {
+                        const existing = (
+                          await rows<{ id: string }>("native_events")
+                        ).find((row) => row.id === event.id);
+                        if (!existing) await put("native_events", record);
+                      } else {
+                        const result = await supabase!
+                          .from("native_events")
+                          .insert(record);
+                        if (result.error) {
+                          if (result.error.code !== "23505") throw result.error;
+                          const { data: existing, error } = await supabase!
+                            .from("native_events")
+                            .select("data")
+                            .eq("id", event.id)
+                            .single();
+                          if (
+                            error ||
+                            existing?.data.source?.record_id !==
+                              p.idempotency_key ||
+                            existing?.data.source?.system !== p.source
+                          )
+                            throw Error(
+                              "An event already uses this ID. Nothing was overwritten.",
+                            );
+                        }
+                      }
                       await put("native_proposals", {
                         id: p.id,
                         status: "approved",

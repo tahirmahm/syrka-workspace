@@ -34,7 +34,7 @@ import {
   categories,
   colours,
   validateEvent,
-  expandEvent,
+  expandInView,
   rangeFor,
   today,
   conflicts,
@@ -140,7 +140,7 @@ function CalendarContent({ id: uid, demo }: { id: string; demo: boolean }) {
       .filter((e) => !hidden.includes(e.calendar_id))
       .flatMap((e) => {
         try {
-          return expandEvent(e.data, exceptions, range.from, range.to);
+          return expandInView(e.data, exceptions, range.start, range.end, zone);
         } catch {
           invalid.push(e.id);
           return [];
@@ -160,7 +160,7 @@ function CalendarContent({ id: uid, demo }: { id: string; demo: boolean }) {
             .includes(query.toLowerCase()),
       );
     return { items, invalid };
-  }, [events, hidden, exceptions, range, query]);
+  }, [events, hidden, exceptions, range, query, zone]);
   const expanded = expansion.items;
   const clashes = conflicts(expanded);
   const conflictKeys = new Set(clashes.flatMap((p) => [p.a, p.b]));
@@ -191,6 +191,7 @@ function CalendarContent({ id: uid, demo }: { id: string; demo: boolean }) {
     });
   }
   function newEvent(day = date, hour = 9) {
+    setError("");
     if (!calendars.some((c) => c.role !== "viewer")) {
       setError("Create a calendar first.");
       return;
@@ -198,23 +199,27 @@ function CalendarContent({ id: uid, demo }: { id: string; demo: boolean }) {
     setOccurrence(null);
     setEditingRevision(null);
     setScope("series");
-    setEdit(
-      validateEvent({
-        id: crypto.randomUUID(),
-        calendar_id: (
-          calendars.find((c) => c.is_default && c.role !== "viewer") ||
-          calendars.find((c) => c.role !== "viewer")!
-        ).id,
-        title: "New event",
-        start_local: `${day}T${String(hour).padStart(2, "0")}:00`,
-        end_local: Temporal.PlainDateTime.from(
-          `${day}T${String(hour).padStart(2, "0")}:00`,
-        )
-          .add({ hours: 1 })
-          .toString({ smallestUnit: "minute" }),
-        time_zone: zone,
-      }),
-    );
+    try {
+      setEdit(
+        validateEvent({
+          id: crypto.randomUUID(),
+          calendar_id: (
+            calendars.find((c) => c.is_default && c.role !== "viewer") ||
+            calendars.find((c) => c.role !== "viewer")!
+          ).id,
+          title: "New event",
+          start_local: `${day}T${String(hour).padStart(2, "0")}:00`,
+          end_local: Temporal.PlainDateTime.from(
+            `${day}T${String(hour).padStart(2, "0")}:00`,
+          )
+            .add({ hours: 1 })
+            .toString({ smallestUnit: "minute" }),
+          time_zone: zone,
+        }),
+      );
+    } catch (e) {
+      setError(message(e));
+    }
   }
   function open(o: Occurrence) {
     setOccurrence(o);
@@ -632,12 +637,21 @@ function CalendarContent({ id: uid, demo }: { id: string; demo: boolean }) {
                 title="Set as default"
                 onClick={() =>
                   void act(async () => {
-                    for (const item of calendars)
-                      if (item.owner_id === uid)
-                        await put("native_calendars", {
-                          ...item,
-                          is_default: item.id === c.id,
-                        });
+                    if (demo) {
+                      for (const item of calendars)
+                        if (item.owner_id === uid)
+                          await put("native_calendars", {
+                            id: item.id,
+                            is_default: item.id === c.id,
+                          });
+                    } else {
+                      const { supabase } = await import("@/lib/storage");
+                      const { error } = await supabase!.rpc(
+                        "native_default_calendar",
+                        { cid: c.id },
+                      );
+                      if (error) throw error;
+                    }
                     await load();
                   })
                 }
@@ -679,14 +693,18 @@ function CalendarContent({ id: uid, demo }: { id: string; demo: boolean }) {
                 const file = e.target.files?.[0];
                 if (file)
                   void act(async () => {
-                    if (!calendars.length)
-                      throw Error("Create a calendar first.");
+                    const target =
+                      calendars.find(
+                        (c) => c.is_default && c.role !== "viewer",
+                      ) || calendars.find((c) => c.role !== "viewer");
+                    if (!target)
+                      throw Error("Create an editable calendar first.");
                     const imported = importICS(
                       await file.text(),
-                      calendars[0].id,
+                      target.id,
                       zone,
                     );
-                    for (const value of imported.filter(
+                    const fresh = imported.filter(
                       (value) =>
                         !events.some(
                           (e) =>
@@ -694,7 +712,8 @@ function CalendarContent({ id: uid, demo }: { id: string; demo: boolean }) {
                             e.data.source?.system === "ical" &&
                             e.data.source.record_id === value.source?.record_id,
                         ),
-                    ))
+                    );
+                    for (const value of fresh)
                       await put("native_events", {
                         id: value.id,
                         owner_id: uid,
@@ -704,7 +723,7 @@ function CalendarContent({ id: uid, demo }: { id: string; demo: boolean }) {
                       });
                     await load();
                     setNotice(
-                      `Imported ${imported.length} event series. Static import; not a synchronized calendar.`,
+                      `Imported ${fresh.length} event series; ${imported.length - fresh.length} already present. Static import, not a synchronized calendar.`,
                     );
                   });
                 e.target.value = "";
@@ -915,6 +934,8 @@ function CalendarContent({ id: uid, demo }: { id: string; demo: boolean }) {
             onSubmit={save}
             role="dialog"
             aria-modal="true"
+            aria-busy={busy}
+            inert={busy}
             aria-label="Event editor"
           >
             <div className="native-row between">
@@ -969,22 +990,30 @@ function CalendarContent({ id: uid, demo }: { id: string; demo: boolean }) {
               <label>
                 Start
                 <input
-                  type="datetime-local"
+                  type={edit.all_day ? "date" : "datetime-local"}
                   required
-                  value={edit.start_local.slice(0, 16)}
+                  value={edit.start_local.slice(0, edit.all_day ? 10 : 16)}
                   onChange={(e) =>
-                    setEdit({ ...edit, start_local: e.target.value })
+                    setEdit({
+                      ...edit,
+                      start_local:
+                        e.target.value + (edit.all_day ? "T00:00" : ""),
+                    })
                   }
                 />
               </label>
               <label>
                 End
                 <input
-                  type="datetime-local"
+                  type={edit.all_day ? "date" : "datetime-local"}
                   required
-                  value={edit.end_local.slice(0, 16)}
+                  value={edit.end_local.slice(0, edit.all_day ? 10 : 16)}
                   onChange={(e) =>
-                    setEdit({ ...edit, end_local: e.target.value })
+                    setEdit({
+                      ...edit,
+                      end_local:
+                        e.target.value + (edit.all_day ? "T00:00" : ""),
+                    })
                   }
                 />
               </label>
@@ -1036,7 +1065,29 @@ function CalendarContent({ id: uid, demo }: { id: string; demo: boolean }) {
                 type="checkbox"
                 checked={edit.all_day}
                 onChange={(e) =>
-                  setEdit({ ...edit, all_day: e.target.checked })
+                  (() => {
+                    try {
+                      const date = Temporal.PlainDate.from(
+                        edit.start_local.slice(0, 10),
+                      );
+                      const end =
+                        edit.end_local.slice(0, 10) > date.toString()
+                          ? edit.end_local.slice(0, 10)
+                          : date.add({ days: 1 }).toString();
+                      setEdit({
+                        ...edit,
+                        all_day: e.target.checked,
+                        start_local:
+                          date.toString() +
+                          (e.target.checked ? "T00:00" : "T09:00"),
+                        end_local: e.target.checked
+                          ? end + "T00:00"
+                          : date.toString() + "T10:00",
+                      });
+                    } catch (err) {
+                      setError(message(err));
+                    }
+                  })()
                 }
               />
               All day (end date is exclusive)
@@ -1290,7 +1341,7 @@ function CalendarContent({ id: uid, demo }: { id: string; demo: boolean }) {
                     "viewer"
                 }
               >
-                Save event
+                {busy ? "Saving…" : "Save event"}
               </button>
               <button
                 type="button"

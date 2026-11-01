@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 for (const width of [1440, 375]) {
-  test(`Sessions is a first-class app before Tools at ${width}px`, async ({
+  test(`Sessions is followed by Calendar and Tools at ${width}px`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
@@ -25,7 +25,15 @@ for (const width of [1440, 375]) {
       await sessions.evaluate((node) =>
         node.nextElementSibling?.textContent?.trim(),
       ),
+    ).toBe("Calendar");
+    expect(
+      await sessions.evaluate((node) =>
+        node.nextElementSibling?.nextElementSibling?.textContent?.trim(),
+      ),
     ).toBe("Tools");
+    await expect(
+      sidebar.getByRole("link", { name: "Forms", exact: true }),
+    ).toHaveCount(0);
     await sessions.click();
     await expect(page).toHaveURL(/\/workspace\/sessions$/);
     if (width === 375)

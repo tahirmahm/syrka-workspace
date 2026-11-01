@@ -50,11 +50,13 @@ export function NativeFrame({
   }, []);
   if (loading)
     return (
-      <div className="native-loading">
-        <LoaderCircle
-          className="native-spin"
-          aria-label="Loading application"
-        />
+      <div className="native-office">
+        <div className="native-loading">
+          <LoaderCircle
+            className="native-spin"
+            aria-label="Loading application"
+          />
+        </div>
       </div>
     );
   if (!identity)

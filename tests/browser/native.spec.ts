@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+test.use({ timezoneId: "Europe/Prague" });
 for (const width of [1440, 390]) {
   test(`Calendar persists recurring events and exceptions at ${width}px`, async ({
     page,
@@ -51,6 +52,11 @@ for (const width of [1440, 390]) {
     await expect(
       page.getByRole("button", { name: /Economics seminar/ }).first(),
     ).toBeVisible();
+    if (!(await page.getByLabel("Navigate to date").isVisible()))
+      await page
+        .getByRole("button", { name: "Calendars", exact: true })
+        .click();
+    await page.getByLabel("Navigate to date").fill("2026-11-02");
     for (const v of ["week", "day", "agenda", "month"]) {
       await page.getByLabel("Calendar view").selectOption(v);
       await expect(page.locator(".calendar-main")).toBeVisible();
@@ -145,7 +151,7 @@ for (const width of [1440, 390]) {
     ).toBeDisabled();
   });
 }
-test("Native apps are accessible through Workspace navigation without changing Sessions ordering", async ({
+test("Calendar follows Sessions and Forms launches through Tools on desktop and mobile", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -153,30 +159,108 @@ test("Native apps are accessible through Workspace navigation without changing S
   await page
     .getByRole("button", { name: "Try demo — no account needed" })
     .click();
+  const sidebar = page.locator(".sidebar");
+  const calendar = sidebar.getByRole("link", { name: "Calendar", exact: true });
+  await expect(calendar).toHaveAttribute("href", "/workspace/calendar");
+  expect(
+    await calendar.evaluate((node) =>
+      node.previousElementSibling?.textContent?.trim(),
+    ),
+  ).toBe("Sessions");
+  expect(
+    await calendar.evaluate((node) =>
+      node.nextElementSibling?.textContent?.trim(),
+    ),
+  ).toBe("Tools");
   await expect(
-    page
-      .locator(".sidebar")
-      .getByRole("link", { name: "Calendar", exact: true }),
-  ).toHaveAttribute("href", "/workspace/calendar");
-  await expect(
-    page.locator(".sidebar").getByRole("link", { name: "Forms", exact: true }),
-  ).toHaveAttribute("href", "/workspace/forms");
-  await page
-    .locator(".sidebar")
-    .getByRole("link", { name: "Calendar", exact: true })
-    .click();
-  await expect(
-    page
-      .locator(".sidebar")
-      .getByRole("link", { name: "Calendar", exact: true }),
-  ).toHaveAttribute("aria-current", "page");
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByLabel("Workspace navigation", { exact: true }).click();
-  await page
-    .getByRole("navigation", { name: "Mobile Workspace navigation" })
-    .getByRole("link", { name: "Forms", exact: true })
-    .click();
+    sidebar.getByRole("link", { name: "Forms", exact: true }),
+  ).toHaveCount(0);
+  await sidebar.getByRole("link", { name: "Tools", exact: true }).click();
+  const forms = page
+    .locator(".tool-card")
+    .filter({ has: page.getByRole("heading", { name: "Forms", exact: true }) });
+  await expect(forms).toHaveAttribute("href", "/workspace/forms");
+  await expect(forms.locator("svg")).toHaveCount(2);
+  await forms.click();
   await expect(
     page.getByRole("heading", { name: "Forms", exact: true }),
   ).toBeVisible();
+  await expect(
+    sidebar.getByRole("link", { name: "Tools", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  await expect(
+    sidebar.getByRole("link", { name: "Forms", exact: true }),
+  ).toHaveCount(0);
+  await calendar.click();
+  await expect(calendar).toHaveAttribute("aria-current", "page");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByLabel("Workspace navigation", { exact: true }).click();
+  const mobileNav = page.getByRole("navigation", {
+    name: "Mobile Workspace navigation",
+  });
+  await expect(
+    mobileNav.getByRole("link", { name: "Forms", exact: true }),
+  ).toHaveCount(0);
+  expect(
+    await mobileNav
+      .getByRole("link", { name: "Sessions", exact: true })
+      .evaluate((node) => node.nextElementSibling?.textContent?.trim()),
+  ).toBe("Calendar");
+  await mobileNav.getByRole("link", { name: "Tools", exact: true }).click();
+  await forms.click();
+  await expect(
+    page.getByRole("heading", { name: "Forms", exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Workspace navigation", { exact: true }).click();
+  await expect(
+    mobileNav.getByRole("link", { name: "Tools", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+});
+
+test("Spring gap creation reports an error and 23:00 appointments cross midnight correctly", async ({
+  page,
+}) => {
+  await page.goto("/workspace/calendar");
+  await page
+    .getByRole("button", { name: "Try demo — no account needed" })
+    .click();
+  if (
+    await page
+      .getByRole("button", { name: "Calendars", exact: true })
+      .isVisible()
+  )
+    await page.getByRole("button", { name: "Calendars", exact: true }).click();
+  await page.getByLabel("New calendar name").fill("Timezone checks");
+  await page.getByRole("button", { name: "Add calendar", exact: true }).click();
+  await page.getByLabel("Navigate to date").fill("2026-03-29");
+  await page.getByLabel("Calendar view").selectOption("day");
+  await page
+    .getByRole("button", {
+      name: "Create event on 2026-03-29 at 2:00",
+      exact: true,
+    })
+    .click();
+  await expect(page.locator(".native-error")).toContainText("does not exist");
+  await page
+    .getByRole("button", {
+      name: "Create event on 2026-03-29 at 23:00",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page
+      .getByRole("dialog", { name: "Event editor" })
+      .getByLabel("End", { exact: true }),
+  ).toHaveValue("2026-03-30T00:00");
+  await page.getByRole("checkbox", { name: /All day/ }).check();
+  await expect(
+    page
+      .getByRole("dialog", { name: "Event editor" })
+      .getByLabel("Start", { exact: true }),
+  ).toHaveValue("2026-03-29");
+  await expect(
+    page
+      .getByRole("dialog", { name: "Event editor" })
+      .getByLabel("End", { exact: true }),
+  ).toHaveValue("2026-03-30");
 });

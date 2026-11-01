@@ -8,7 +8,12 @@ import {
   providerFailure,
 } from "@/lib/sessions/qwen";
 import { formSchema, questionSchema, validateForm } from "@/lib/native/forms";
-import { expandEvent, zoned, zoneValid } from "@/lib/native/calendar";
+import {
+  expandInView,
+  rangeFor,
+  zoned,
+  zoneValid,
+} from "@/lib/native/calendar";
 export const maxDuration = 60;
 const proposed = z.object({
   events: z
@@ -56,12 +61,17 @@ export async function POST(req: Request) {
         .select("*")
         .limit(5000);
       if (exError) throw exError;
-      const from = zoned(body.date + "T00:00", body.zone)
-          .toInstant()
-          .toString(),
-        to = new Date(Date.parse(from) + 90 * 86400000).toISOString();
+      const range = rangeFor(body.date, "agenda", body.zone);
       body.busy = events
-        .flatMap((row) => expandEvent(row.data, exceptions || [], from, to))
+        .flatMap((row) =>
+          expandInView(
+            row.data,
+            exceptions || [],
+            range.start,
+            range.end,
+            body.zone!,
+          ),
+        )
         .map((o) => ({ start: o.start, end: o.end }));
     }
     if (!qwenReady() || process.env.SYRKA_AI_PROVIDER !== "qwen")
